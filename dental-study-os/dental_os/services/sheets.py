@@ -45,6 +45,7 @@ class SheetService:
 
     def initialize(self) -> None:
         if self._initialized:
+            self._refresh_presentation_safe()
             if not self._formatting_attempted:
                 self._apply_formatting_safe()
             return
@@ -52,8 +53,8 @@ class SheetService:
             worksheet = self._get_or_create_worksheet(title)
             self._ensure_headers(worksheet, SHEET_HEADERS[title])
         self._ensure_settings_seeded()
-        self._setup_dashboard()
         self._initialized = True
+        self._refresh_presentation_safe()
         self._apply_formatting_safe()
 
     def append_row(self, sheet_name: str, values: list[str]) -> int:
@@ -202,7 +203,7 @@ class SheetService:
             worksheet = self.spreadsheet.worksheet(sheet_name)
             if worksheet.row_count > 1:
                 worksheet.batch_clear([f"A2:{rowcol_to_a1(worksheet.row_count, worksheet.col_count)}"])
-        self._setup_dashboard()
+        self._refresh_presentation_safe()
 
     def upsert_study_progress(self, subject: str, total_count: str = "", completed_count: str = "", notes: str = "") -> tuple[int, dict]:
         self.initialize()
@@ -344,6 +345,13 @@ class SheetService:
             pass
         finally:
             self._formatting_attempted = True
+
+    def _refresh_presentation_safe(self) -> None:
+        try:
+            self._setup_dashboard()
+        except Exception:
+            # Dashboard refresh is helpful but should never block core logging.
+            pass
 
     def _spreadsheet_properties_request(self) -> dict:
         return {
