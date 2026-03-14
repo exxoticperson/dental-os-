@@ -23,6 +23,7 @@ class AppConfig:
     friday_summary_hour: int
     friday_summary_minute: int
     reminder_scan_minutes: int
+    webhook_base_url: str | None
 
 
 def _optional_int(name: str) -> int | None:
@@ -55,4 +56,5 @@ def load_config() -> AppConfig:
         friday_summary_hour=int(os.getenv("FRIDAY_SUMMARY_HOUR", "9")),
         friday_summary_minute=int(os.getenv("FRIDAY_SUMMARY_MINUTE", "0")),
         reminder_scan_minutes=int(os.getenv("REMINDER_SCAN_MINUTES", "15")),
+        webhook_base_url=os.getenv("WEBHOOK_BASE_URL", "").strip() or None,
     )
