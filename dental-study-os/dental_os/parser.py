@@ -10,7 +10,7 @@ from dental_os.constants import (
     SUBJECT_ALIASES,
     TASK_DONE_KEYWORDS,
 )
-from dental_os.date_utils import extract_datetime, extract_follow_up_date, extract_time_only, format_date, parse_recurring_rule
+from dental_os.date_utils import extract_datetime, extract_follow_up_date, extract_time_only, format_date, normalize_natural_text, parse_recurring_rule
 from dental_os.models import ParsedIntent
 
 
@@ -27,7 +27,7 @@ class DentalParser:
         self._sorted_aliases = sorted(SUBJECT_ALIASES.items(), key=lambda item: len(item[0]), reverse=True)
 
     def parse(self, text: str, is_photo: bool = False) -> ParsedIntent:
-        normalized = " ".join((text or "").strip().split())
+        normalized = normalize_natural_text(" ".join((text or "").strip().split()))
         if not normalized:
             return ParsedIntent(route="inbox", confidence=0.2, raw_text=text, parsed_type="Inbox", status="New")
         if self._is_query(normalized):
@@ -88,7 +88,20 @@ class DentalParser:
     def _is_query(self, text: str) -> bool:
         lower = text.lower()
         progress_question = any(phrase in lower for phrase in ("how much", "how many lectures", "what am i missing", "what lectures", "how much left", "what's left", "whats left"))
-        return lower.startswith(QUESTION_PREFIXES) or lower.endswith("?") or progress_question
+        conversational_query = any(
+            phrase in lower for phrase in (
+                "how many",
+                "tell me",
+                "show me",
+                "coming up",
+                "when is",
+                "when do i",
+                "what do i have",
+                "what follow ups",
+                "what follow-ups",
+            )
+        )
+        return lower.startswith(QUESTION_PREFIXES) or lower.endswith("?") or progress_question or conversational_query
 
     def _looks_like_task_done(self, text: str) -> bool:
         lower = text.lower()

@@ -11,10 +11,32 @@ from zoneinfo import ZoneInfo
 TIME_COLON_RE = re.compile(r"\b(\d{1,2}):(\d{2})\s*(am|pm)?\b", re.IGNORECASE)
 TIME_AT_RE = re.compile(r"\bat\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", re.IGNORECASE)
 TIME_MERIDIEM_RE = re.compile(r"\b(\d{1,2})\s*(am|pm)\b", re.IGNORECASE)
+SLANG_REPLACEMENTS = (
+    (r"\b2mrw\b", "tomorrow"),
+    (r"\btmrw\b", "tomorrow"),
+    (r"\btmw\b", "tomorrow"),
+    (r"\btomo\b", "tomorrow"),
+    (r"\bafter tmrw\b", "after tomorrow"),
+    (r"\bafter tmw\b", "after tomorrow"),
+    (r"\bf\/up\b", "follow up"),
+    (r"\bfu\b", "follow up"),
+    (r"\bqz\b", "quiz"),
+    (r"\basg\b", "assignment"),
+    (r"\bpls\b", "please"),
+    (r"\bplz\b", "please"),
+)
 
 
 def now_local(timezone_name: str) -> datetime:
     return datetime.now(ZoneInfo(timezone_name))
+
+
+def normalize_natural_text(text: str) -> str:
+    normalized = text or ""
+    for pattern, replacement in SLANG_REPLACEMENTS:
+        normalized = re.sub(pattern, replacement, normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
 
 
 def naive_now_local(timezone_name: str) -> datetime:

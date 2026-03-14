@@ -15,6 +15,8 @@ class QueryEngine:
 
     def answer(self, text: str) -> str:
         lower = text.lower()
+        if "how many" in lower and any(token in lower for token in ("quiz", "exam", "clinic", "deadline", "discussion", "reminder")):
+            return self._count_upcoming_items(text)
         if any(phrase in lower for phrase in ("how much left", "what's left", "whats left", "what am i missing", "how many lectures", "lectures left", "studied yet")):
             return self._study_progress(text)
         if "what's next" in lower or "whats next" in lower or lower == "next":
@@ -34,6 +36,27 @@ class QueryEngine:
         if "what did i do" in lower or "did i do" in lower:
             return self._activity_window(text)
         return self._schedule_window(text)
+
+    def _count_upcoming_items(self, text: str) -> str:
+        lower = text.lower()
+        event_type = ""
+        for candidate in ("quiz", "exam", "clinic", "deadline", "discussion", "reminder"):
+            if candidate in lower:
+                event_type = "Reminder" if candidate == "reminder" else candidate.title()
+                break
+        schedule = self.sheets.get_records("Schedule")
+        today = today_local(self.timezone_name)
+        rows = [
+            row for row in schedule
+            if row.get("Date")
+            and row.get("Status") not in {"Done", "Cancelled"}
+            and row.get("Date") >= today
+            and (not event_type or row.get("Type") == event_type)
+        ]
+        count = len(rows)
+        label = (event_type or "item").lower()
+        plural = {"quiz": "quizzes"}.get(label, f"{label}s")
+        return f"Upcoming {plural}: {count}."
 
     def weekly_summary(self) -> str:
         sections = [
