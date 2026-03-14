@@ -41,17 +41,20 @@ class SheetService:
         self.google = google
         self.spreadsheet = self.google.gspread_client.open_by_key(config.google_spreadsheet_id)
         self._initialized = False
+        self._formatting_attempted = False
 
     def initialize(self) -> None:
         if self._initialized:
+            if not self._formatting_attempted:
+                self._apply_formatting_safe()
             return
         for title in SHEET_ORDER:
             worksheet = self._get_or_create_worksheet(title)
             self._ensure_headers(worksheet, SHEET_HEADERS[title])
         self._ensure_settings_seeded()
         self._setup_dashboard()
-        self._apply_formatting()
         self._initialized = True
+        self._apply_formatting_safe()
 
     def append_row(self, sheet_name: str, values: list[str]) -> int:
         self.initialize()
@@ -330,6 +333,17 @@ class SheetService:
             requests.extend(self._validation_requests(sheet_id, title))
             requests.extend(self._conditional_requests(sheet_id, title))
         self.spreadsheet.batch_update({"requests": requests})
+
+    def _apply_formatting_safe(self) -> None:
+        if self._formatting_attempted:
+            return
+        try:
+            self._apply_formatting()
+        except Exception:
+            # Formatting should never block logging or query access.
+            pass
+        finally:
+            self._formatting_attempted = True
 
     def _spreadsheet_properties_request(self) -> dict:
         return {

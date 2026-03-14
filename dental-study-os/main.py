@@ -16,7 +16,7 @@ from dental_os.reminders import build_scheduler
 from dental_os.services.drive import DriveService
 from dental_os.services.google import GoogleClients
 from dental_os.services.sheets import SheetService
-from dental_os.telegram_handlers.messages import handle_photo, handle_text, help_command, init_command, start_command, summary_command
+from dental_os.telegram_handlers.messages import handle_photo, handle_text, handle_voice, help_command, init_command, start_command, summary_command
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
@@ -46,6 +46,7 @@ def build_application(config: AppConfig, *, webhook_mode: bool) -> tuple[Applica
     app.add_handler(CommandHandler("init", init_command))
     app.add_handler(CommandHandler("summary", summary_command))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     return app, sheets
 

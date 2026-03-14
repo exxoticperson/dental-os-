@@ -163,6 +163,16 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await _store_patient_photo(update, context, intent, message.photo[-1].file_id)
 
 
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    config: AppConfig = context.application.bot_data["config"]
+    if not is_authorized(update, config):
+        return
+    message = update.effective_message
+    if not message:
+        return
+    await message.reply_text("Voice notes aren't supported yet. Send text or a photo caption.")
+
+
 async def _handle_clarification(update: Update, context: ContextTypes.DEFAULT_TYPE, pending: PendingClarification) -> None:
     message = update.effective_message
     reply_text = message.text if message else ""
