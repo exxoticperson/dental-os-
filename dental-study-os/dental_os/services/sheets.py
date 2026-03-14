@@ -153,6 +153,40 @@ class SheetService:
         headers = SHEET_HEADERS["Schedule"]
         self.update_row("Schedule", row_number, [record.get(header, "") for header in headers])
 
+    def get_recent_rows(self, sheet_name: str, limit: int = 20) -> list[tuple[int, dict]]:
+        self.initialize()
+        worksheet = self.spreadsheet.worksheet(sheet_name)
+        values = worksheet.get_all_values()
+        if len(values) <= 1:
+            return []
+        headers = values[0]
+        output: list[tuple[int, dict]] = []
+        for row_number in range(len(values), 1, -1):
+            row = values[row_number - 1]
+            if not any(cell.strip() for cell in row):
+                continue
+            padded = row + [""] * (len(headers) - len(row))
+            output.append((row_number, dict(zip(headers, padded))))
+            if len(output) >= limit:
+                break
+        return output
+
+    def update_record_fields(self, sheet_name: str, row_number: int, updates: dict[str, str]) -> dict:
+        self.initialize()
+        worksheet = self.spreadsheet.worksheet(sheet_name)
+        values = worksheet.get_all_values()
+        if row_number <= 1 or row_number > len(values):
+            raise ValueError("Row not found.")
+        headers = values[0]
+        row = values[row_number - 1]
+        padded = row + [""] * (len(headers) - len(row))
+        record = dict(zip(headers, padded))
+        for key, value in updates.items():
+            if key in record:
+                record[key] = value
+        self.update_row(sheet_name, row_number, [record.get(header, "") for header in headers])
+        return record
+
     def delete_row(self, sheet_name: str, row_number: int) -> None:
         self.initialize()
         worksheet = self.spreadsheet.worksheet(sheet_name)

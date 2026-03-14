@@ -4,12 +4,14 @@ import logging
 import os
 import re
 import tempfile
+from dataclasses import dataclass
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from dental_os.config import AppConfig
-from dental_os.date_utils import timestamp_local, today_local
+from dental_os.constants import MATERIAL_STATUSES, PRIORITIES, SCHEDULE_STATUSES, SUBJECTS, TASK_STATUSES
+from dental_os.date_utils import extract_datetime, extract_time_only, timestamp_local, today_local
 from dental_os.models import PendingClarification
 from dental_os.parser import DentalParser
 from dental_os.query_engine import QueryEngine
@@ -38,6 +40,45 @@ PURE_CHAT_MESSAGES = {
     "cool": "Noted.",
     "great": "Good.",
 }
+EDITABLE_SHEETS = ("Tasks", "Schedule", "Assessments", "Patients", "Materials", "Courses")
+STOPWORDS = {
+    "change", "update", "edit", "move", "delete", "remove", "last", "that", "this", "entry", "record", "item",
+    "to", "from", "for", "the", "a", "an", "my", "please", "set",
+}
+FIELD_ALIASES = {
+    "date": "Date",
+    "due date": "Due_Date",
+    "due": "Due_Date",
+    "follow up date": "Follow_Up_Date",
+    "follow-up date": "Follow_Up_Date",
+    "follow up": "Follow_Up_Date",
+    "follow-up": "Follow_Up_Date",
+    "time": "Time",
+    "phone": "Phone_Number",
+    "phone number": "Phone_Number",
+    "number": "Phone_Number",
+    "subject": "Subject",
+    "priority": "Priority",
+    "status": "Status",
+    "score": "Score",
+    "mark": "Score",
+    "total": "Total",
+    "task": "Task",
+    "event": "Event",
+    "item": "Item",
+    "name": "Patient_Name",
+    "patient name": "Patient_Name",
+    "procedure": "Procedure",
+    "next step": "Next_Step",
+}
+
+
+@dataclass
+class RecordMatch:
+    sheet_name: str
+    row_number: int
+    record: dict
+    score: int
 
 
 def is_authorized(update: Update, config: AppConfig) -> bool:
@@ -157,6 +198,12 @@ async def _process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text
         return
     if _looks_like_correction(text):
         await _handle_correction(update, context, text)
+        return
+    if _looks_like_delete_request(text):
+        await _handle_delete_request(update, context, text)
+        return
+    if _looks_like_edit_request(text):
+        await _handle_edit_request(update, context, text)
         return
     intent = parser.parse(text)
     try:
@@ -292,6 +339,16 @@ def _looks_like_correction(text: str) -> bool:
     return any(lower.startswith(prefix) for prefix in CORRECTION_PREFIXES)
 
 
+def _looks_like_delete_request(text: str) -> bool:
+    lower = text.strip().lower()
+    return lower.startswith(("delete ", "remove ")) and "that" not in lower[:15]
+
+
+def _looks_like_edit_request(text: str) -> bool:
+    lower = text.strip().lower()
+    return lower.startswith(("change ", "update ", "edit ", "move ", "set "))
+
+
 async def _handle_correction(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
     sheets: SheetService = context.application.bot_data["sheets"]
     parser: DentalParser = context.application.bot_data["parser"]
@@ -318,6 +375,34 @@ async def _handle_correction(update: Update, context: ContextTypes.DEFAULT_TYPE,
         await update.effective_message.reply_text(f"Moved from {sheet_name} to {rerouted}.")
     else:
         await update.effective_message.reply_text(f"Removed from {sheet_name}. Saved your correction to Inbox.")
+
+
+async def _handle_delete_request(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
+    sheets: SheetService = context.application.bot_data["sheets"]
+    parser: DentalParser = context.application.bot_data["parser"]
+    match = _find_record_match(context, sheets, parser, update.effective_user.id, text)
+    if not match:
+        await update.effective_message.reply_text("Couldn't find that record.")
+        return
+    sheets.delete_row(match.sheet_name, match.row_number)
+    _forget_action_by_row(context, update.effective_user.id, match.sheet_name, match.row_number)
+    await update.effective_message.reply_text(f"Deleted: {_record_label(match.sheet_name, match.record)}.")
+
+
+async def _handle_edit_request(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
+    sheets: SheetService = context.application.bot_data["sheets"]
+    parser: DentalParser = context.application.bot_data["parser"]
+    match = _find_record_match(context, sheets, parser, update.effective_user.id, text)
+    if not match:
+        await update.effective_message.reply_text("Couldn't find that record.")
+        return
+    updates = _extract_updates_for_record(text, match.sheet_name, match.record, parser)
+    if not updates:
+        await update.effective_message.reply_text("Tell me what to change and the new value.")
+        return
+    updated = sheets.update_record_fields(match.sheet_name, match.row_number, updates)
+    _remember_last_action(context, update.effective_user.id, match.sheet_name, match.row_number, _record_raw_text(match.sheet_name, updated))
+    await update.effective_message.reply_text(f"Updated: {_record_label(match.sheet_name, updated)}.")
 
 
 def _remember_last_action(context: ContextTypes.DEFAULT_TYPE, user_id: int, sheet_name: str, row_number: int, raw_text: str) -> None:
@@ -356,6 +441,19 @@ def _remove_action(context: ContextTypes.DEFAULT_TYPE, user_id: int, action: dic
         action_map.pop(user_id, None)
 
 
+def _forget_action_by_row(context: ContextTypes.DEFAULT_TYPE, user_id: int, sheet_name: str, row_number: int) -> None:
+    action_map = context.application.bot_data.setdefault("last_actions", {})
+    history = action_map.get(user_id, [])
+    history = [
+        item for item in history
+        if not (item.get("sheet_name") == sheet_name and item.get("row_number") == row_number)
+    ]
+    if history:
+        action_map[user_id] = history
+    else:
+        action_map.pop(user_id, None)
+
+
 def _find_action_for_correction(context: ContextTypes.DEFAULT_TYPE, user_id: int, text: str, parser: DentalParser) -> dict | None:
     action_map = context.application.bot_data.setdefault("last_actions", {})
     history = list(reversed(action_map.get(user_id, [])))
@@ -387,6 +485,52 @@ def _find_action_for_correction(context: ContextTypes.DEFAULT_TYPE, user_id: int
     return best_action
 
 
+def _find_record_match(
+    context: ContextTypes.DEFAULT_TYPE,
+    sheets: SheetService,
+    parser: DentalParser,
+    user_id: int,
+    text: str,
+) -> RecordMatch | None:
+    lower = text.lower()
+    mentioned_sheet = _extract_sheet_hint(lower)
+    mentioned_subject = parser._normalize_subject(text)
+    mentioned_case = _extract_case_id(text)
+    field_alias = _extract_field_alias(lower)
+    target_text = _target_text(text)
+    keywords = _search_keywords(target_text)
+    last_actions = list(reversed(context.application.bot_data.setdefault("last_actions", {}).get(user_id, [])))
+    action_scores = {(item.get("sheet_name"), item.get("row_number")): index for index, item in enumerate(last_actions)}
+    candidates: list[RecordMatch] = []
+    sheet_names = [mentioned_sheet] if mentioned_sheet else list(EDITABLE_SHEETS)
+    for sheet_name in sheet_names:
+        for row_number, record in sheets.get_recent_rows(sheet_name, limit=12):
+            score = 0
+            if mentioned_sheet and sheet_name == mentioned_sheet:
+                score += 5
+            if mentioned_subject and record.get("Subject") == mentioned_subject:
+                score += 4
+            if mentioned_case and record.get("Case_ID", "").upper() == mentioned_case:
+                score += 7
+            haystack = _record_search_text(sheet_name, record)
+            overlap = len(keywords.intersection(_search_keywords(haystack)))
+            score += overlap
+            if field_alias and field_alias in record:
+                score += 1
+            if "last" in lower and score >= 0:
+                score += 2
+            if (sheet_name, row_number) in action_scores:
+                score += max(0, 4 - action_scores[(sheet_name, row_number)])
+            candidates.append(RecordMatch(sheet_name=sheet_name, row_number=row_number, record=record, score=score))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (item.score, item.row_number), reverse=True)
+    best = candidates[0]
+    if best.score <= 0 and not ("last" in lower or mentioned_case):
+        return None
+    return best
+
+
 def _extract_sheet_hint(lower_text: str) -> str:
     hint_map = {
         "schedule": "Schedule",
@@ -401,6 +545,174 @@ def _extract_sheet_hint(lower_text: str) -> str:
     for keyword, sheet_name in hint_map.items():
         if keyword in lower_text:
             return sheet_name
+    return ""
+
+
+def _extract_case_id(text: str) -> str:
+    match = re.search(r"\b([A-Za-z]\d{2,})\b", text)
+    return match.group(1).upper() if match else ""
+
+
+def _extract_field_alias(lower_text: str) -> str:
+    for alias, field in sorted(FIELD_ALIASES.items(), key=lambda item: len(item[0]), reverse=True):
+        if alias in lower_text:
+            return field
+    return ""
+
+
+def _target_text(text: str) -> str:
+    lower = text.lower()
+    if " to " in lower:
+        return text.rsplit(" to ", 1)[0]
+    return text
+
+
+def _search_keywords(text: str) -> set[str]:
+    tokens = {token for token in re.findall(r"[a-z0-9/+-]{3,}", text.lower()) if token not in STOPWORDS}
+    return tokens
+
+
+def _record_search_text(sheet_name: str, record: dict) -> str:
+    important_fields = {
+        "Tasks": ("Task", "Subject", "Priority", "Due_Date", "Notes"),
+        "Schedule": ("Event", "Type", "Subject", "Date", "Time", "Notes"),
+        "Assessments": ("Subject", "Assessment_Type", "Score", "Total", "Notes"),
+        "Patients": ("Case_ID", "Patient_Name", "Subject", "Procedure", "Phone_Number", "Next_Step", "Session_Notes"),
+        "Materials": ("Item", "Category", "Subject", "Store_or_Source", "Notes"),
+        "Courses": ("Subject", "Lecture_or_Topic", "Category", "Notes"),
+    }
+    return " ".join(record.get(field, "") for field in important_fields.get(sheet_name, tuple(record.keys())))
+
+
+def _record_label(sheet_name: str, record: dict) -> str:
+    label_map = {
+        "Tasks": record.get("Task", "Task"),
+        "Schedule": record.get("Event", "Schedule item"),
+        "Assessments": f"{record.get('Subject', 'Assessment')} {record.get('Score', '').strip()}/{record.get('Total', '').strip()}".strip(),
+        "Patients": f"{record.get('Case_ID', '').strip()} {record.get('Patient_Name', '').strip()}".strip(),
+        "Materials": record.get("Item", "Material"),
+        "Courses": f"{record.get('Subject', '').strip()} {record.get('Lecture_or_Topic', '').strip()}".strip(),
+    }
+    return label_map.get(sheet_name, sheet_name).strip() or sheet_name
+
+
+def _record_raw_text(sheet_name: str, record: dict) -> str:
+    field_map = {
+        "Tasks": ("Task", "Subject", "Due_Date"),
+        "Schedule": ("Event", "Subject", "Date", "Time"),
+        "Assessments": ("Subject", "Assessment_Type", "Score", "Total", "Date"),
+        "Patients": ("Case_ID", "Patient_Name", "Subject", "Procedure", "Follow_Up_Date"),
+        "Materials": ("Item", "Subject", "Store_or_Source"),
+        "Courses": ("Subject", "Lecture_or_Topic", "Category"),
+    }
+    return " ".join(record.get(field, "") for field in field_map.get(sheet_name, tuple(record.keys()))).strip()
+
+
+def _extract_updates_for_record(text: str, sheet_name: str, record: dict, parser: DentalParser) -> dict[str, str]:
+    lower = text.lower().strip()
+    value = text.rsplit(" to ", 1)[1].strip() if " to " in lower else ""
+    field = _extract_field_alias(lower)
+    if lower.startswith("move ") and not field:
+        field = "Date"
+    if not value:
+        return {}
+    updates = _build_field_updates(field, value, sheet_name, record, parser)
+    if updates:
+        return updates
+    inferred = _infer_updates_from_value(value, sheet_name, record, parser)
+    return inferred
+
+
+def _build_field_updates(field: str, value: str, sheet_name: str, record: dict, parser: DentalParser) -> dict[str, str]:
+    if field in {"Date", "Due_Date", "Follow_Up_Date"}:
+        parsed_dt, _ = extract_datetime(value, parser.timezone_name)
+        if not parsed_dt:
+            return {}
+        normalized = parsed_dt.strftime("%Y-%m-%d")
+        if field == "Date" and sheet_name == "Tasks":
+            return {"Due_Date": normalized}
+        if field == "Date" and sheet_name == "Patients":
+            return {"Date": normalized}
+        if field == "Date" and sheet_name == "Assessments":
+            return {"Date": normalized}
+        if sheet_name == "Schedule" and field == "Date":
+            return {"Date": normalized, "Reminder_Date": normalized}
+        return {field: normalized}
+    if field == "Time":
+        time_value = extract_time_only(value)
+        return {"Time": time_value} if time_value else {}
+    if field == "Phone_Number":
+        digits = value.strip()
+        return {"Phone_Number": digits}
+    if field == "Subject":
+        subject = parser._normalize_subject(value)
+        return {"Subject": subject} if subject else {}
+    if field == "Priority":
+        priority = _match_one(value, PRIORITIES)
+        return {"Priority": priority} if priority else {}
+    if field == "Status":
+        statuses = {
+            "Tasks": TASK_STATUSES,
+            "Schedule": SCHEDULE_STATUSES,
+            "Materials": MATERIAL_STATUSES,
+            "Courses": ("Not Started", "Active", "Done", "Archived"),
+            "Patients": ("Logged",),
+            "Assessments": tuple(),
+        }.get(sheet_name, tuple())
+        status = _match_one(value, statuses)
+        return {"Status": status} if status else {}
+    if field == "Score":
+        score_match = re.search(r"(\d{1,3}(?:\.\d+)?)\s*/\s*(\d{1,3}(?:\.\d+)?)", value)
+        if score_match:
+            score = score_match.group(1)
+            total = score_match.group(2)
+            percentage = f"{(float(score) / float(total)) * 100:.0f}%"
+            return {"Score": score, "Total": total, "Percentage": percentage}
+        return {"Score": value.strip()}
+    if field == "Total":
+        return {"Total": value.strip()}
+    if field in {"Task", "Event", "Item", "Patient_Name", "Procedure", "Next_Step"}:
+        return {field: value.strip()}
+    return {}
+
+
+def _infer_updates_from_value(value: str, sheet_name: str, record: dict, parser: DentalParser) -> dict[str, str]:
+    updates: dict[str, str] = {}
+    parsed_dt, _ = extract_datetime(value, parser.timezone_name)
+    time_value = extract_time_only(value)
+    if sheet_name == "Schedule":
+        if parsed_dt:
+            normalized = parsed_dt.strftime("%Y-%m-%d")
+            updates["Date"] = normalized
+            updates["Reminder_Date"] = normalized
+        if time_value:
+            updates["Time"] = time_value
+    elif sheet_name == "Tasks" and parsed_dt:
+        updates["Due_Date"] = parsed_dt.strftime("%Y-%m-%d")
+    elif sheet_name == "Patients" and parsed_dt:
+        target = "Follow_Up_Date" if "follow" in value.lower() or record.get("Follow_Up_Date") else "Date"
+        updates[target] = parsed_dt.strftime("%Y-%m-%d")
+    score_match = re.search(r"(\d{1,3}(?:\.\d+)?)\s*/\s*(\d{1,3}(?:\.\d+)?)", value)
+    if sheet_name == "Assessments" and score_match:
+        score = score_match.group(1)
+        total = score_match.group(2)
+        updates.update({"Score": score, "Total": total, "Percentage": f"{(float(score) / float(total)) * 100:.0f}%"})
+    if not updates:
+        subject = parser._normalize_subject(value)
+        if subject:
+            updates["Subject"] = subject
+        else:
+            priority = _match_one(value, PRIORITIES)
+            if priority and "Priority" in record:
+                updates["Priority"] = priority
+    return updates
+
+
+def _match_one(text: str, choices) -> str:
+    lower = text.lower()
+    for choice in choices:
+        if choice.lower() in lower:
+            return choice
     return ""
 
 
