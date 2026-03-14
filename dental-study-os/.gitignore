@@ -1,0 +1,10 @@
+.env
+.render-env.local
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.tmp
+*.temp

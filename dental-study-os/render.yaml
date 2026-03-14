@@ -1,0 +1,31 @@
+services:
+  - type: worker
+    name: dental-study-os-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: TELEGRAM_ALLOWED_USER_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_OAUTH_REFRESH_TOKEN
+        sync: false
+      - key: GOOGLE_SPREADSHEET_ID
+        sync: false
+      - key: GOOGLE_DRIVE_ROOT_FOLDER_ID
+        sync: false
+      - key: GOOGLE_DRIVE_ROOT_FOLDER_NAME
+        value: Dental Study OS Patients
+      - key: DEFAULT_TIMEZONE
+        value: Africa/Cairo
+      - key: FRIDAY_SUMMARY_HOUR
+        value: "9"
+      - key: FRIDAY_SUMMARY_MINUTE
+        value: "0"
+      - key: REMINDER_SCAN_MINUTES
+        value: "15"
