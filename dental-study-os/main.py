@@ -53,7 +53,8 @@ def build_application(config: AppConfig, *, webhook_mode: bool) -> tuple[Applica
 async def run_webhook_mode(config: AppConfig) -> None:
     application, sheets = build_application(config, webhook_mode=True)
     scheduler = build_scheduler(application, config, sheets, application.bot_data["query_engine"], config.telegram_allowed_user_id)
-    webhook_base_url = (config.webhook_base_url or os.getenv("RENDER_EXTERNAL_URL", "")).rstrip("/")
+    koyeb_domain = os.getenv("KOYEB_PUBLIC_DOMAIN", "").strip()
+    webhook_base_url = (config.webhook_base_url or os.getenv("RENDER_EXTERNAL_URL", "") or (f"https://{koyeb_domain}" if koyeb_domain else "")).rstrip("/")
     if not webhook_base_url:
         raise ValueError("WEBHOOK_BASE_URL or RENDER_EXTERNAL_URL is required for webhook mode.")
 
@@ -110,8 +111,9 @@ def run_polling_mode(config: AppConfig) -> None:
 
 def main() -> None:
     config = load_config()
-    webhook_base_url = config.webhook_base_url or os.getenv("RENDER_EXTERNAL_URL", "")
-    if webhook_base_url or os.getenv("RENDER"):
+    koyeb_domain = os.getenv("KOYEB_PUBLIC_DOMAIN", "").strip()
+    webhook_base_url = config.webhook_base_url or os.getenv("RENDER_EXTERNAL_URL", "") or (f"https://{koyeb_domain}" if koyeb_domain else "")
+    if webhook_base_url or os.getenv("RENDER") or koyeb_domain:
         asyncio.run(run_webhook_mode(config))
         return
     run_polling_mode(config)
