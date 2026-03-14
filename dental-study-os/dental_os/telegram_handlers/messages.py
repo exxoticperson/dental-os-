@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import tempfile
 from datetime import datetime
 
@@ -29,6 +30,8 @@ CORRECTION_PREFIXES = (
     "remove that",
     "undo that",
 )
+
+CHAT_PREFIXES = ("hi", "hello", "hey", "help", "thanks", "thank you")
 
 
 def is_authorized(update: Update, config: AppConfig) -> bool:
@@ -142,6 +145,10 @@ async def _process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text
     parser: DentalParser = context.application.bot_data["parser"]
     sheets: SheetService = context.application.bot_data["sheets"]
     query_engine: QueryEngine = context.application.bot_data["query_engine"]
+    chat_reply = _chat_reply(text)
+    if chat_reply:
+        await update.effective_message.reply_text(chat_reply)
+        return
     if _looks_like_correction(text):
         await _handle_correction(update, context, text)
         return
@@ -260,14 +267,15 @@ def _looks_like_correction(text: str) -> bool:
 
 async def _handle_correction(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
     sheets: SheetService = context.application.bot_data["sheets"]
-    last_action = _get_last_action(context, update.effective_user.id)
-    if not last_action:
+    parser: DentalParser = context.application.bot_data["parser"]
+    action = _find_action_for_correction(context, update.effective_user.id, text, parser)
+    if not action:
         await _save_to_inbox(sheets, text, parsed_type="Correction", notes="No recent action to reverse.")
         await update.effective_message.reply_text("Saved your correction to Inbox.")
         return
-    sheet_name = last_action.get("sheet_name", "")
-    row_number = last_action.get("row_number", 0)
-    original_text = last_action.get("raw_text", "")
+    sheet_name = action.get("sheet_name", "")
+    row_number = action.get("row_number", 0)
+    original_text = action.get("raw_text", "")
     if sheet_name and row_number:
         try:
             sheets.delete_row(sheet_name, row_number)
@@ -275,24 +283,109 @@ async def _handle_correction(update: Update, context: ContextTypes.DEFAULT_TYPE,
             logger.exception("Failed to roll back last action.")
     correction_note = f"Correction for {sheet_name}: {original_text}"
     await _save_to_inbox(sheets, text, parsed_type="Correction", notes=correction_note)
-    _clear_last_action(context, update.effective_user.id)
-    await update.effective_message.reply_text(f"Removed from {sheet_name}. Saved correction to Inbox.")
+    _remove_action(context, update.effective_user.id, action)
+    await update.effective_message.reply_text(f"Removed from {sheet_name}. Saved your correction to Inbox.")
 
 
 def _remember_last_action(context: ContextTypes.DEFAULT_TYPE, user_id: int, sheet_name: str, row_number: int, raw_text: str) -> None:
     action_map = context.application.bot_data.setdefault("last_actions", {})
-    action_map[user_id] = {
+    history = action_map.setdefault(user_id, [])
+    history.append(
+        {
         "sheet_name": sheet_name,
         "row_number": row_number,
         "raw_text": raw_text,
-    }
+        "summary": _summarize_action(sheet_name, raw_text),
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        }
+    )
+    action_map[user_id] = history[-12:]
 
 
 def _get_last_action(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> dict | None:
     action_map = context.application.bot_data.setdefault("last_actions", {})
-    return action_map.get(user_id)
+    history = action_map.get(user_id, [])
+    return history[-1] if history else None
 
 
 def _clear_last_action(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> None:
     action_map = context.application.bot_data.setdefault("last_actions", {})
     action_map.pop(user_id, None)
+
+
+def _remove_action(context: ContextTypes.DEFAULT_TYPE, user_id: int, action: dict) -> None:
+    action_map = context.application.bot_data.setdefault("last_actions", {})
+    history = action_map.get(user_id, [])
+    history = [item for item in history if item is not action]
+    if history:
+        action_map[user_id] = history
+    else:
+        action_map.pop(user_id, None)
+
+
+def _find_action_for_correction(context: ContextTypes.DEFAULT_TYPE, user_id: int, text: str, parser: DentalParser) -> dict | None:
+    action_map = context.application.bot_data.setdefault("last_actions", {})
+    history = list(reversed(action_map.get(user_id, [])))
+    if not history:
+        return None
+    lower = text.lower()
+    mentioned_sheet = _extract_sheet_hint(lower)
+    mentioned_subject = parser._normalize_subject(text)
+    keywords = set(re.findall(r"[a-z]{4,}", lower))
+    best_score = -1
+    best_action = None
+    for action in history:
+        score = 0
+        sheet_name = action.get("sheet_name", "").lower()
+        raw_text = action.get("raw_text", "").lower()
+        if mentioned_sheet and mentioned_sheet.lower() == sheet_name:
+            score += 5
+        elif mentioned_sheet:
+            score -= 1
+        if mentioned_subject and mentioned_subject.lower() in raw_text:
+            score += 3
+        overlap = len(keywords.intersection(set(re.findall(r"[a-z]{4,}", raw_text))))
+        score += overlap
+        if action is history[0]:
+            score += 1
+        if score > best_score:
+            best_score = score
+            best_action = action
+    return best_action
+
+
+def _extract_sheet_hint(lower_text: str) -> str:
+    hint_map = {
+        "schedule": "Schedule",
+        "task": "Tasks",
+        "assignment": "Tasks",
+        "mark": "Assessments",
+        "assessment": "Assessments",
+        "patient": "Patients",
+        "material": "Materials",
+        "course": "Courses",
+    }
+    for keyword, sheet_name in hint_map.items():
+        if keyword in lower_text:
+            return sheet_name
+    return ""
+
+
+def _summarize_action(sheet_name: str, raw_text: str) -> str:
+    clean = " ".join(raw_text.split())
+    return f"{sheet_name}: {clean[:80]}"
+
+
+def _chat_reply(text: str) -> str:
+    lower = text.strip().lower()
+    if not lower:
+        return ""
+    if lower.startswith(("hi", "hello", "hey")):
+        return "Here. Send anything to log, ask, or fix."
+    if lower in {"help", "/help"}:
+        return "Send natural messages. If I misfile something, say: no, that's wrong."
+    if lower.startswith(("thanks", "thank you")):
+        return "Anytime."
+    if lower in {"how are you", "how are you?"}:
+        return "Ready."
+    return ""

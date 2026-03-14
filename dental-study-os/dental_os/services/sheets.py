@@ -18,15 +18,18 @@ from dental_os.constants import (
     INBOX_STATUSES,
     MATERIAL_CATEGORIES,
     MATERIAL_STATUSES,
-    NEUTRAL_BODY_BG,
     NEUTRAL_HEADER_BG,
     PRIORITIES,
     SCHEDULE_STATUSES,
+    SECTION_BG,
     SHEET_COLUMN_WIDTHS,
     SHEET_HEADERS,
     SHEET_ORDER,
+    STRIPE_BG,
     SUBJECTS,
+    SUMMARY_BG,
     TASK_STATUSES,
+    WHITE_BG,
 )
 from dental_os.services.google import GoogleClients
 
@@ -231,11 +234,12 @@ class SheetService:
                     "cell": {
                         "userEnteredFormat": {
                             "backgroundColor": NEUTRAL_HEADER_BG,
-                            "textFormat": {"bold": True, "foregroundColor": ACCENT_TEXT},
+                            "textFormat": {"bold": True, "foregroundColor": ACCENT_TEXT, "fontSize": 10, "fontFamily": "Aptos"},
                             "horizontalAlignment": "LEFT",
+                            "borders": {"bottom": {"style": "SOLID", "color": {"red": 0.84, "green": 0.87, "blue": 0.9}}},
                         }
                     },
-                    "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)",
+                    "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,borders)",
                 }
             },
             {
@@ -243,8 +247,8 @@ class SheetService:
                     "range": {"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": row_count, "startColumnIndex": 0, "endColumnIndex": col_count},
                     "cell": {
                         "userEnteredFormat": {
-                            "backgroundColor": NEUTRAL_BODY_BG,
-                            "textFormat": {"foregroundColor": {"red": 0.12, "green": 0.12, "blue": 0.12}},
+                            "backgroundColor": WHITE_BG,
+                            "textFormat": {"foregroundColor": {"red": 0.12, "green": 0.12, "blue": 0.12}, "fontSize": 10, "fontFamily": "Aptos"},
                             "wrapStrategy": "WRAP",
                             "verticalAlignment": "MIDDLE",
                         }
@@ -258,6 +262,14 @@ class SheetService:
                     "fields": "gridProperties.frozenRowCount",
                 }
             },
+            {
+                "addBanding": {
+                    "bandedRange": {
+                        "range": {"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": row_count, "startColumnIndex": 0, "endColumnIndex": col_count},
+                        "rowProperties": {"firstBandColor": WHITE_BG, "secondBandColor": STRIPE_BG},
+                    }
+                }
+            },
         ]
         if title == "Dashboard":
             requests.append(
@@ -267,7 +279,7 @@ class SheetService:
                         "cell": {
                             "userEnteredFormat": {
                                 "backgroundColor": ACCENT_BG,
-                                "textFormat": {"bold": True, "fontSize": 15, "foregroundColor": ACCENT_TEXT},
+                                "textFormat": {"bold": True, "fontSize": 15, "foregroundColor": ACCENT_TEXT, "fontFamily": "Aptos"},
                             }
                         },
                         "fields": "userEnteredFormat(backgroundColor,textFormat)",
@@ -280,8 +292,8 @@ class SheetService:
                         "range": {"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 4},
                         "cell": {
                             "userEnteredFormat": {
-                                "backgroundColor": {"red": 0.95, "green": 0.96, "blue": 0.97},
-                                "textFormat": {"bold": True, "foregroundColor": ACCENT_TEXT},
+                                "backgroundColor": SUMMARY_BG,
+                                "textFormat": {"bold": True, "foregroundColor": ACCENT_TEXT, "fontFamily": "Aptos"},
                             }
                         },
                         "fields": "userEnteredFormat(backgroundColor,textFormat)",
@@ -292,15 +304,15 @@ class SheetService:
                 requests.append(
                     {
                         "repeatCell": {
-                            "range": {"sheetId": sheet_id, "startRowIndex": row_index, "endRowIndex": row_index + 1, "startColumnIndex": 0, "endColumnIndex": 7},
-                            "cell": {
-                                "userEnteredFormat": {
-                                    "backgroundColor": {"red": 0.93, "green": 0.95, "blue": 0.97},
-                                    "textFormat": {"bold": True, "foregroundColor": ACCENT_TEXT},
-                                }
-                            },
-                            "fields": "userEnteredFormat(backgroundColor,textFormat)",
-                        }
+                        "range": {"sheetId": sheet_id, "startRowIndex": row_index, "endRowIndex": row_index + 1, "startColumnIndex": 0, "endColumnIndex": 7},
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": SECTION_BG,
+                                "textFormat": {"bold": True, "foregroundColor": ACCENT_TEXT, "fontFamily": "Aptos"},
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,textFormat)",
+                    }
                     }
                 )
         return requests

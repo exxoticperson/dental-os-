@@ -129,6 +129,10 @@ NEUTRAL_HEADER_BG = {"red": 0.92, "green": 0.93, "blue": 0.94}
 NEUTRAL_BODY_BG = {"red": 0.98, "green": 0.98, "blue": 0.98}
 ACCENT_BG = {"red": 0.88, "green": 0.92, "blue": 0.96}
 ACCENT_TEXT = {"red": 0.11, "green": 0.18, "blue": 0.26}
+STRIPE_BG = {"red": 0.965, "green": 0.972, "blue": 0.978}
+SECTION_BG = {"red": 0.93, "green": 0.95, "blue": 0.97}
+SUMMARY_BG = {"red": 0.95, "green": 0.96, "blue": 0.97}
+WHITE_BG = {"red": 1.0, "green": 1.0, "blue": 1.0}
 
 PRIORITY_KEYWORDS = {
     "urgent": "Urgent",
