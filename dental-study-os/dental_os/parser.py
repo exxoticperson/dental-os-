@@ -96,6 +96,8 @@ class DentalParser:
 
     def _looks_like_patient(self, text: str) -> bool:
         lower = text.lower()
+        if lower.startswith("remind") or "remind me" in lower or "reminder" in lower:
+            return False
         return any(token in lower for token in ("patient", "case", "follow up", "follow-up", "crown prep", "extraction", "rct", "session")) or bool(CASE_RE.search(text))
 
     def _looks_like_assessment(self, text: str) -> bool:
@@ -140,7 +142,8 @@ class DentalParser:
         lower = text.lower()
         assessment_type = "Quiz" if "quiz" in lower else "Exam" if "exam" in lower else "Practical" if "practical" in lower else "Discussion" if "discussion" in lower else "Other"
         subject = self._normalize_subject(text)
-        parsed_dt, _ = extract_datetime(text, self.timezone_name, prefer_future=False)
+        cleaned_text = SCORE_RE.sub("", text).strip()
+        parsed_dt, _ = extract_datetime(cleaned_text, self.timezone_name, prefer_future=False) if cleaned_text else (None, "")
         return ParsedIntent(route="assessments", confidence=0.96, raw_text=text, parsed_type="Assessment", subject=subject, date=format_date(parsed_dt), assessment_type=assessment_type, score=score, total=total, percentage=percentage, notes=text)
 
     def _parse_material(self, text: str) -> ParsedIntent:
@@ -166,11 +169,11 @@ class DentalParser:
         event = text
         if phrase:
             event = re.sub(re.escape(phrase), "", event, flags=re.IGNORECASE).strip(" ,.-")
-        event = re.sub(r"^remind me to\s+", "", event, flags=re.IGNORECASE).strip()
+        event = re.sub(r"^remind me(?:\s+to)?\s+", "", event, flags=re.IGNORECASE).strip()
         event = event or text
         recurring = parse_recurring_rule(text)
         reminder_date = format_date(parsed_dt) if parsed_dt else ""
-        time_value = extract_time_only(text) or (parsed_dt.strftime("%H:%M") if parsed_dt and (parsed_dt.hour or parsed_dt.minute) else "")
+        time_value = extract_time_only(text)
         if not parsed_dt and event_type == "Reminder":
             return ParsedIntent(route="schedule", confidence=0.56, raw_text=text, parsed_type="Schedule", requires_follow_up=True, follow_up_question="When should I remind you?")
         return ParsedIntent(route="schedule", confidence=0.9 if parsed_dt else 0.72, raw_text=text, parsed_type="Schedule", subject=self._normalize_subject(text), date=format_date(parsed_dt), time=time_value, event=event[:250], priority=self._extract_priority(text), follow_up_date=reminder_date, recurring=recurring, status="Scheduled", notes=text, metadata={"event_type": event_type})

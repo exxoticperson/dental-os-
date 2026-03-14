@@ -7,7 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram.ext import Application
 
 from dental_os.config import AppConfig
-from dental_os.date_utils import next_recurring_datetime
+from dental_os.date_utils import naive_now_local, next_recurring_datetime
 from dental_os.query_engine import QueryEngine
 from dental_os.services.sheets import SheetService
 
@@ -24,7 +24,7 @@ def build_scheduler(
         scan_due_reminders,
         "interval",
         minutes=config.reminder_scan_minutes,
-        args=[application, sheets, chat_id],
+        args=[application, sheets, chat_id, config.default_timezone],
         id="scan_due_reminders",
         replace_existing=True,
         max_instances=1,
@@ -43,10 +43,10 @@ def build_scheduler(
     return scheduler
 
 
-async def scan_due_reminders(application: Application, sheets: SheetService, chat_id: int | None) -> None:
+async def scan_due_reminders(application: Application, sheets: SheetService, chat_id: int | None, timezone_name: str) -> None:
     if not chat_id:
         return
-    now_value = datetime.now()
+    now_value = naive_now_local(timezone_name)
     due_rows = sheets.get_due_schedule_rows(now_value)
     for row_number, record in due_rows:
         reminder_stamp = f"{record.get('Reminder_Date')}T{record.get('Time') or '09:00'}"

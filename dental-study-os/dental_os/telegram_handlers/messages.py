@@ -4,12 +4,12 @@ import logging
 import os
 import re
 import tempfile
-from datetime import datetime
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from dental_os.config import AppConfig
+from dental_os.date_utils import timestamp_local, today_local
 from dental_os.models import PendingClarification
 from dental_os.parser import DentalParser
 from dental_os.query_engine import QueryEngine
@@ -180,7 +180,7 @@ async def _process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text
         await update.effective_message.reply_text(f"Done: {task_name}." if task_name else "No matching open task.")
         return
     if intent.route == "tasks":
-        today = datetime.now().date().isoformat()
+        today = today_local(parser.timezone_name)
         if _is_duplicate_recent(context, update.effective_user.id, "Tasks", text):
             await update.effective_message.reply_text("Looks like the last task. Skipped.")
             return
@@ -198,13 +198,13 @@ async def _process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text
         await update.effective_message.reply_text(f"Added: {intent.event}.")
         return
     if intent.route == "assessments":
-        today = datetime.now().date().isoformat()
+        today = today_local(parser.timezone_name)
         row_number = sheets.append_row("Assessments", [intent.date or today, intent.subject, intent.assessment_type, intent.score, intent.total, intent.percentage, intent.notes])
         _remember_last_action(context, update.effective_user.id, "Assessments", row_number, text)
         await update.effective_message.reply_text(f"Logged: {intent.subject or 'Assessment'} {intent.score}/{intent.total}.")
         return
     if intent.route == "patients":
-        today = datetime.now().date().isoformat()
+        today = today_local(parser.timezone_name)
         if _is_duplicate_recent(context, update.effective_user.id, "Patients", text):
             await update.effective_message.reply_text("Looks like the last patient log. Skipped.")
             return
@@ -213,7 +213,7 @@ async def _process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text
         await update.effective_message.reply_text(f"Saved: Patient session for {intent.case_id} {intent.patient_name}.")
         return
     if intent.route == "materials":
-        today = datetime.now().date().isoformat()
+        today = today_local(parser.timezone_name)
         row_number = sheets.append_row("Materials", [today, intent.item, intent.category, intent.subject, intent.priority, intent.status or "Pending", intent.store_or_source, intent.notes])
         _remember_last_action(context, update.effective_user.id, "Materials", row_number, text)
         await update.effective_message.reply_text(f"Added: {intent.item} to Materials.")
@@ -247,7 +247,7 @@ async def _store_patient_photo(update: Update, context: ContextTypes.DEFAULT_TYP
         await telegram_file.download_to_drive(custom_path=tmp_path)
         photo_link = drive.upload_patient_photo(tmp_path, intent.subject, intent.case_id, intent.patient_name)
         if not sheets.attach_photo_link(intent.case_id, photo_link):
-            today = datetime.now().date().isoformat()
+            today = today_local(context.application.bot_data["parser"].timezone_name)
             row_number = sheets.append_row("Patients", [today, intent.subject, intent.case_id, intent.patient_name, intent.phone_number, intent.procedure, intent.tooth_or_area, intent.supervisor, intent.session_notes, intent.next_step, intent.follow_up_date, photo_link])
             _remember_last_action(context, update.effective_user.id, "Patients", row_number, intent.raw_text)
         await update.effective_message.reply_text(f"Saved: Patient photo for {intent.case_id} {intent.patient_name}.")
@@ -268,7 +268,7 @@ async def _save_to_inbox(
     linked_case_id: str = "",
     notes: str = "",
 ) -> None:
-    timestamp = datetime.now().isoformat(timespec="seconds")
+    timestamp = timestamp_local(sheets.config.default_timezone)
     sheets.append_row("Inbox", [timestamp, raw_text, parsed_type, subject, linked_case_id, "New", "", notes])
 
 
@@ -329,7 +329,7 @@ def _remember_last_action(context: ContextTypes.DEFAULT_TYPE, user_id: int, shee
         "row_number": row_number,
         "raw_text": raw_text,
         "summary": _summarize_action(sheet_name, raw_text),
-        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "created_at": timestamp_local(context.application.bot_data["config"].default_timezone),
         }
     )
     action_map[user_id] = history[-12:]
@@ -459,10 +459,10 @@ async def _reroute_correction(update: Update, context: ContextTypes.DEFAULT_TYPE
     sheets: SheetService = context.application.bot_data["sheets"]
     intent = parser.parse(reroute_text)
     user_id = update.effective_user.id
+    today = today_local(parser.timezone_name)
     if intent.route in {"query", "inbox"} or intent.requires_follow_up:
         return ""
     if intent.route == "tasks":
-        today = datetime.now().date().isoformat()
         row_number = sheets.append_row("Tasks", [today, intent.task, intent.subject, intent.priority, intent.date, "Open", intent.recurring, f"Correction: {reroute_text}"])
         _remember_last_action(context, user_id, "Tasks", row_number, reroute_text)
         return "Tasks"
@@ -471,17 +471,14 @@ async def _reroute_correction(update: Update, context: ContextTypes.DEFAULT_TYPE
         _remember_last_action(context, user_id, "Schedule", row_number, reroute_text)
         return "Schedule"
     if intent.route == "patients":
-        today = datetime.now().date().isoformat()
         row_number = sheets.append_row("Patients", [intent.date or today, intent.subject, intent.case_id, intent.patient_name, intent.phone_number, intent.procedure, intent.tooth_or_area, intent.supervisor, intent.session_notes, intent.next_step, intent.follow_up_date, intent.photo_links])
         _remember_last_action(context, user_id, "Patients", row_number, reroute_text)
         return "Patients"
     if intent.route == "assessments":
-        today = datetime.now().date().isoformat()
         row_number = sheets.append_row("Assessments", [intent.date or today, intent.subject, intent.assessment_type, intent.score, intent.total, intent.percentage, f"Correction: {reroute_text}"])
         _remember_last_action(context, user_id, "Assessments", row_number, reroute_text)
         return "Assessments"
     if intent.route == "materials":
-        today = datetime.now().date().isoformat()
         row_number = sheets.append_row("Materials", [today, intent.item, intent.category, intent.subject, intent.priority, intent.status or "Pending", intent.store_or_source, f"Correction: {reroute_text}"])
         _remember_last_action(context, user_id, "Materials", row_number, reroute_text)
         return "Materials"

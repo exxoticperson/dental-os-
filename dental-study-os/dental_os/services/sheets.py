@@ -159,6 +159,14 @@ class SheetService:
         if row_number > 1:
             worksheet.delete_rows(row_number)
 
+    def clear_operational_data(self) -> None:
+        self.initialize()
+        for sheet_name in ("Inbox", "Tasks", "Schedule", "Assessments", "Patients", "Materials", "Courses"):
+            worksheet = self.spreadsheet.worksheet(sheet_name)
+            if worksheet.row_count > 1:
+                worksheet.batch_clear([f"A2:{rowcol_to_a1(worksheet.row_count, worksheet.col_count)}"])
+        self._setup_dashboard()
+
     def upsert_study_progress(self, subject: str, total_count: str = "", completed_count: str = "", notes: str = "") -> tuple[int, dict]:
         self.initialize()
         worksheet = self.spreadsheet.worksheet("Courses")
@@ -242,33 +250,33 @@ class SheetService:
         worksheet = self.spreadsheet.worksheet("Dashboard")
         worksheet.clear()
         layout = [
-            ["Dental Study OS", "Live"],
-            ["Open Tasks", '=COUNTA(FILTER(Tasks!B2:B,Tasks!B2:B<>"",Tasks!F2:F<>"Done"))', "Upcoming 7 Days", '=COUNTA(FILTER(Schedule!A2:A,Schedule!A2:A<>"",Schedule!A2:A>=TODAY(),Schedule!A2:A<=TODAY()+7,Schedule!H2:H<>"Cancelled"))'],
-            ["Pending Follow-Ups", '=COUNTA(FILTER(Patients!C2:C,Patients!C2:C<>"",Patients!K2:K<>""))', "Pending Materials", '=COUNTA(FILTER(Materials!B2:B,Materials!B2:B<>"",Materials!F2:F<>"Done",Materials!F2:F<>"Bought"))'],
+            ["Dental Study OS", "", "", "Cairo", '=TEXT(NOW(),"ddd d mmm, h:mm AM/PM")', "", "", ""],
+            ["Today View", "", "", "", "", "", "", ""],
+            ["Open Tasks", '=COUNTIFS(Tasks!B2:B,"<>",Tasks!F2:F,"<>Done")', "Next 7 Days", '=COUNTIFS(Schedule!A2:A,">="&TODAY(),Schedule!A2:A,"<="&TODAY()+7,Schedule!H2:H,"<>Cancelled")', "Follow-Ups", '=COUNTIFS(Patients!C2:C,"<>",Patients!K2:K,"<>")', "Pending Materials", '=COUNTIFS(Materials!B2:B,"<>",Materials!F2:F,"<>Done",Materials!F2:F,"<>Bought")'],
             [],
-            ["Next 7 Days"],
+            ["Upcoming"],
             ["Date", "Time", "Type", "Subject", "Event", "Priority", "Status"],
-            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({Schedule!A2:A,Schedule!B2:B,Schedule!C2:C,Schedule!D2:D,Schedule!E2:E,Schedule!F2:F,Schedule!H2:H},Schedule!A2:A<>"",Schedule!A2:A>=TODAY(),Schedule!A2:A<=TODAY()+7),1,TRUE,2,TRUE),5,7),"")'],
+            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({IF(Schedule!A2:A<>"",TEXT(Schedule!A2:A,"ddd d mmm"),""),IF(Schedule!B2:B<>"",TEXT(Schedule!B2:B,"h:mm AM/PM"),""),Schedule!C2:C,Schedule!D2:D,Schedule!E2:E,Schedule!F2:F,Schedule!H2:H},Schedule!A2:A<>"",Schedule!A2:A>=TODAY(),Schedule!A2:A<=TODAY()+7,Schedule!H2:H<>"Cancelled"),1,TRUE,2,TRUE),6,7),"")'],
             [],
-            ["Open Tasks"],
-            ["Created", "Task", "Subject", "Priority", "Due", "Status"],
-            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({Tasks!A2:A,Tasks!B2:B,Tasks!C2:C,Tasks!D2:D,Tasks!E2:E,Tasks!F2:F},Tasks!B2:B<>"",Tasks!F2:F<>"Done"),4,FALSE,5,TRUE),5,6),"")'],
-            [],
-            ["Pending Follow-Ups"],
-            ["Date", "Subject", "Case_ID", "Patient", "Next_Step", "Follow_Up_Date"],
-            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({Patients!A2:A,Patients!B2:B,Patients!C2:C,Patients!D2:D,Patients!J2:J,Patients!K2:K},Patients!C2:C<>"",Patients!K2:K<>""),6,TRUE),4,6),"")'],
+            ["Patient Follow-Ups"],
+            ["Date", "Subject", "Case_ID", "Patient", "Next Step", "Follow-Up"],
+            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({IF(Patients!A2:A<>"",TEXT(Patients!A2:A,"ddd d mmm"),""),Patients!B2:B,Patients!C2:C,Patients!D2:D,Patients!J2:J,IF(Patients!K2:K<>"",TEXT(Patients!K2:K,"ddd d mmm"),"")},Patients!C2:C<>"",Patients!K2:K<>""),6,TRUE),5,6),"")'],
             [],
             ["Recent Patient Sessions"],
             ["Date", "Subject", "Case_ID", "Patient", "Procedure"],
-            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({Patients!A2:A,Patients!B2:B,Patients!C2:C,Patients!D2:D,Patients!F2:F},Patients!C2:C<>""),1,FALSE),4,5),"")'],
+            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({IF(Patients!A2:A<>"",TEXT(Patients!A2:A,"ddd d mmm"),""),Patients!B2:B,Patients!C2:C,Patients!D2:D,Patients!F2:F},Patients!C2:C<>""),1,FALSE),5,5),"")'],
+            [],
+            ["Open Tasks"],
+            ["Created", "Task", "Subject", "Priority", "Due", "Status"],
+            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({IF(Tasks!A2:A<>"",TEXT(Tasks!A2:A,"ddd d mmm"),""),Tasks!B2:B,Tasks!C2:C,Tasks!D2:D,IF(Tasks!E2:E<>"",TEXT(Tasks!E2:E,"ddd d mmm"),""),Tasks!F2:F},Tasks!B2:B<>"",Tasks!F2:F<>"Done"),4,FALSE,5,TRUE),5,6),"")'],
             [],
             ["Recent Marks"],
             ["Date", "Subject", "Type", "Score", "Total", "Percentage"],
-            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({Assessments!A2:A,Assessments!B2:B,Assessments!C2:C,Assessments!D2:D,Assessments!E2:E,Assessments!F2:F},Assessments!B2:B<>""),1,FALSE),4,6),"")'],
+            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({IF(Assessments!A2:A<>"",TEXT(Assessments!A2:A,"ddd d mmm"),""),Assessments!B2:B,Assessments!C2:C,Assessments!D2:D,Assessments!E2:E,Assessments!F2:F},Assessments!B2:B<>""),1,FALSE),5,6),"")'],
             [],
             ["Pending Materials"],
             ["Date", "Item", "Category", "Subject", "Priority", "Status"],
-            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({Materials!A2:A,Materials!B2:B,Materials!C2:C,Materials!D2:D,Materials!E2:E,Materials!F2:F},Materials!B2:B<>"",Materials!F2:F<>"Done",Materials!F2:F<>"Bought"),1,FALSE),4,6),"")'],
+            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({IF(Materials!A2:A<>"",TEXT(Materials!A2:A,"ddd d mmm"),""),Materials!B2:B,Materials!C2:C,Materials!D2:D,Materials!E2:E,Materials!F2:F},Materials!B2:B<>"",Materials!F2:F<>"Done",Materials!F2:F<>"Bought"),1,FALSE),4,6),"")'],
             [],
             ["Study Progress"],
             ["Subject", "Studied", "Left", "Notes"],
@@ -277,15 +285,45 @@ class SheetService:
         worksheet.update("A1", layout, value_input_option="USER_ENTERED")
 
     def _apply_formatting(self) -> None:
-        requests: list[dict] = []
+        requests: list[dict] = [self._spreadsheet_properties_request()]
+        requests.extend(self._delete_conditional_rule_requests())
         for title in SHEET_ORDER:
             worksheet = self.spreadsheet.worksheet(title)
             sheet_id = worksheet.id
             requests.extend(self._sheet_style_requests(sheet_id, title, worksheet.row_count, worksheet.col_count))
             requests.extend(self._column_width_requests(sheet_id, title))
+            requests.extend(self._number_format_requests(sheet_id, title))
             requests.extend(self._validation_requests(sheet_id, title))
             requests.extend(self._conditional_requests(sheet_id, title))
         self.spreadsheet.batch_update({"requests": requests})
+
+    def _spreadsheet_properties_request(self) -> dict:
+        return {
+            "updateSpreadsheetProperties": {
+                "properties": {
+                    "locale": "en_GB",
+                    "timeZone": self.config.default_timezone,
+                    "autoRecalc": "ON_CHANGE",
+                },
+                "fields": "locale,timeZone,autoRecalc",
+            }
+        }
+
+    def _delete_conditional_rule_requests(self) -> list[dict]:
+        metadata = self.spreadsheet.fetch_sheet_metadata()
+        requests: list[dict] = []
+        for sheet in metadata.get("sheets", []):
+            rules = sheet.get("conditionalFormats", [])
+            for index in range(len(rules) - 1, -1, -1):
+                requests.append(
+                    {
+                        "deleteConditionalFormatRule": {
+                            "sheetId": sheet["properties"]["sheetId"],
+                            "index": index,
+                        }
+                    }
+                )
+        return requests
 
     def _sheet_style_requests(self, sheet_id: int, title: str, row_count: int, col_count: int) -> list[dict]:
         requests = [
@@ -319,8 +357,8 @@ class SheetService:
             },
             {
                 "updateSheetProperties": {
-                    "properties": {"sheetId": sheet_id, "gridProperties": {"frozenRowCount": 1}},
-                    "fields": "gridProperties.frozenRowCount",
+                    "properties": {"sheetId": sheet_id, "gridProperties": {"frozenRowCount": 1, "hideGridlines": title == "Dashboard"}},
+                    "fields": "gridProperties.frozenRowCount,gridProperties.hideGridlines",
                 }
             },
         ]
@@ -353,7 +391,7 @@ class SheetService:
                     }
                 }
             )
-            for row_index in (4, 8, 12, 16, 20, 24):
+            for row_index in (4, 8, 12, 16, 20, 24, 28):
                 requests.append(
                     {
                         "repeatCell": {
@@ -365,9 +403,24 @@ class SheetService:
                             }
                         },
                         "fields": "userEnteredFormat(backgroundColor,textFormat)",
-                    }
+                        }
                     }
                 )
+            requests.append(
+                {
+                    "repeatCell": {
+                        "range": {"sheetId": sheet_id, "startRowIndex": 2, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 8},
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": SUMMARY_BG,
+                                "textFormat": {"bold": True, "foregroundColor": ACCENT_TEXT, "fontFamily": "Aptos", "fontSize": 11},
+                                "horizontalAlignment": "CENTER",
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)",
+                    }
+                }
+            )
         return requests
 
     def _column_width_requests(self, sheet_id: int, title: str) -> Iterable[dict]:
@@ -416,6 +469,37 @@ class SheetService:
                             "strict": False,
                             "showCustomUi": True,
                         },
+                    }
+                }
+            )
+        return requests
+
+    def _number_format_requests(self, sheet_id: int, title: str) -> list[dict]:
+        ranges = {
+            "Inbox": [(0, "DATE_TIME", "yyyy-mm-dd hh:mm:ss"), (6, "DATE", "yyyy-mm-dd")],
+            "Tasks": [(0, "DATE", "yyyy-mm-dd"), (4, "DATE", "yyyy-mm-dd")],
+            "Schedule": [(0, "DATE", "yyyy-mm-dd"), (1, "TIME", "h:mm AM/PM"), (6, "DATE", "yyyy-mm-dd")],
+            "Assessments": [(0, "DATE", "yyyy-mm-dd")],
+            "Patients": [(0, "DATE", "yyyy-mm-dd"), (10, "DATE", "yyyy-mm-dd")],
+            "Materials": [(0, "DATE", "yyyy-mm-dd")],
+        }
+        requests: list[dict] = []
+        for column_index, number_type, pattern in ranges.get(title, []):
+            requests.append(
+                {
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": 1,
+                            "startColumnIndex": column_index,
+                            "endColumnIndex": column_index + 1,
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "numberFormat": {"type": number_type, "pattern": pattern}
+                            }
+                        },
+                        "fields": "userEnteredFormat.numberFormat",
                     }
                 }
             )

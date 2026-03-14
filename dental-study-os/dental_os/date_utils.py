@@ -1,18 +1,32 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import dateparser
 from dateparser.search import search_dates
 from zoneinfo import ZoneInfo
 
 
-TIME_RE = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", re.IGNORECASE)
+TIME_COLON_RE = re.compile(r"\b(\d{1,2}):(\d{2})\s*(am|pm)?\b", re.IGNORECASE)
+TIME_AT_RE = re.compile(r"\bat\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", re.IGNORECASE)
+TIME_MERIDIEM_RE = re.compile(r"\b(\d{1,2})\s*(am|pm)\b", re.IGNORECASE)
 
 
 def now_local(timezone_name: str) -> datetime:
     return datetime.now(ZoneInfo(timezone_name))
+
+
+def naive_now_local(timezone_name: str) -> datetime:
+    return now_local(timezone_name).replace(tzinfo=None)
+
+
+def today_local(timezone_name: str) -> str:
+    return now_local(timezone_name).date().isoformat()
+
+
+def timestamp_local(timezone_name: str) -> str:
+    return now_local(timezone_name).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def format_date(dt: datetime | None) -> str:
@@ -45,12 +59,18 @@ def extract_follow_up_date(text: str, timezone_name: str) -> str:
 
 
 def extract_time_only(text: str) -> str:
-    match = TIME_RE.search(text)
+    match = TIME_AT_RE.search(text) or TIME_COLON_RE.search(text) or TIME_MERIDIEM_RE.search(text)
     if not match:
         return ""
-    hours = int(match.group(1))
-    minutes = int(match.group(2) or 0)
-    meridiem = (match.group(3) or "").lower()
+    groups = match.groups("")
+    if match.re is TIME_MERIDIEM_RE:
+        hours = int(groups[0])
+        minutes = 0
+        meridiem = groups[1].lower()
+    else:
+        hours = int(groups[0])
+        minutes = int(groups[1] or 0)
+        meridiem = (groups[2] or "").lower()
     if meridiem == "pm" and hours < 12:
         hours += 12
     if meridiem == "am" and hours == 12:
@@ -60,30 +80,40 @@ def extract_time_only(text: str) -> str:
     return ""
 
 
-def parse_range_hint(text: str, timezone_name: str) -> tuple[datetime, datetime]:
+def parse_range_hint(text: str, timezone_name: str) -> tuple[date, date]:
     base = now_local(timezone_name)
     lower = text.lower()
     if "today" in lower:
-        start = base.replace(hour=0, minute=0, second=0, microsecond=0)
+        start = base.date()
         return start, start + timedelta(days=1)
     if "yesterday" in lower:
-        start = (base - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        start = (base - timedelta(days=1)).date()
         return start, start + timedelta(days=1)
     if "tomorrow" in lower:
-        start = (base + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        start = (base + timedelta(days=1)).date()
         return start, start + timedelta(days=1)
     if "last week" in lower:
-        end = base.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = base.date()
         return end - timedelta(days=7), end
     if "this week" in lower or "next 7 days" in lower:
-        start = base.replace(hour=0, minute=0, second=0, microsecond=0)
+        start = base.date()
         return start, start + timedelta(days=7)
     parsed, _ = extract_datetime(text, timezone_name)
     if parsed:
-        start = parsed.replace(hour=0, minute=0, second=0, microsecond=0)
+        start = parsed.date()
         return start, start + timedelta(days=1)
-    start = base.replace(hour=0, minute=0, second=0, microsecond=0)
+    start = base.date()
     return start, start + timedelta(days=7)
+
+
+def parse_sheet_date(value: str) -> date | None:
+    value = (value or "").strip()
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 def parse_recurring_rule(text: str) -> str:

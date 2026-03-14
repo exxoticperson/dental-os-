@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
 import math
 
-from dental_os.date_utils import parse_range_hint
+from dental_os.date_utils import parse_range_hint, parse_sheet_date, today_local
 from dental_os.parser import DentalParser
 from dental_os.services.sheets import SheetService
 
@@ -51,8 +50,8 @@ class QueryEngine:
 
     def _next_item(self) -> str:
         schedule = self.sheets.get_records("Schedule")
-        today = datetime.now().date().isoformat()
-        candidates = [row for row in schedule if row.get("Date") and row.get("Status") != "Done" and row.get("Date") >= today]
+        today = today_local(self.timezone_name)
+        candidates = [row for row in schedule if row.get("Date") and row.get("Status") not in {"Done", "Cancelled"} and row.get("Date") >= today]
         candidates.sort(key=lambda row: (row.get("Date"), row.get("Time") or "23:59"))
         if not candidates:
             return "Nothing upcoming."
@@ -65,12 +64,8 @@ class QueryEngine:
         schedule = self.sheets.get_records("Schedule")
         rows = []
         for row in schedule:
-            date_value = row.get("Date", "")
-            if not date_value:
-                continue
-            try:
-                date_obj = datetime.fromisoformat(date_value)
-            except ValueError:
+            date_obj = parse_sheet_date(row.get("Date", ""))
+            if not date_obj:
                 continue
             if start <= date_obj < end and row.get("Status") != "Cancelled":
                 rows.append(row)
@@ -103,12 +98,8 @@ class QueryEngine:
         patients = self.sheets.get_records("Patients")
         rows = []
         for row in patients:
-            date_value = row.get("Date")
-            if not date_value:
-                continue
-            try:
-                date_obj = datetime.fromisoformat(date_value)
-            except ValueError:
+            date_obj = parse_sheet_date(row.get("Date"))
+            if not date_obj:
                 continue
             if start <= date_obj < end:
                 rows.append(row)
@@ -149,11 +140,8 @@ class QueryEngine:
             rows = []
             for row in self.sheets.get_records(sheet_name):
                 date_value = row.get("Date") or row.get("Created_Date")
-                if not date_value:
-                    continue
-                try:
-                    date_obj = datetime.fromisoformat(date_value)
-                except ValueError:
+                date_obj = parse_sheet_date(date_value)
+                if not date_obj:
                     continue
                 if start <= date_obj < end:
                     rows.append(row)
