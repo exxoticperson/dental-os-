@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import math
 
 from dental_os.date_utils import parse_range_hint
 from dental_os.parser import DentalParser
@@ -15,6 +16,8 @@ class QueryEngine:
 
     def answer(self, text: str) -> str:
         lower = text.lower()
+        if any(phrase in lower for phrase in ("how much left", "what's left", "whats left", "what am i missing", "how many lectures", "lectures left", "studied yet")):
+            return self._study_progress(text)
         if "what's next" in lower or "whats next" in lower or lower == "next":
             return self._next_item()
         if "tomorrow" in lower or "today" in lower or "this week" in lower:
@@ -42,6 +45,7 @@ class QueryEngine:
             self._patient_history("last week"),
             self._marks("recent marks"),
             self._missing_materials(),
+            self._study_progress("study progress"),
         ]
         return "\n\n".join(sections)
 
@@ -156,3 +160,23 @@ class QueryEngine:
             if rows:
                 lines.append(f"{label}: " + ", ".join(row.get(field, "") for row in rows[:5] if row.get(field)))
         return "\n".join(lines) if lines else "Nothing logged in that window."
+
+    def _study_progress(self, text: str) -> str:
+        subject = self.parser._normalize_subject(text)
+        rows = self.sheets.get_study_progress(subject)
+        if not rows:
+            return "Study progress: nothing logged yet."
+        lines = []
+        for row in rows[:6]:
+            total_count = row.get("Total_Count", 0)
+            done_count = row.get("Completed_Count", 0)
+            remaining = row.get("Remaining_Count", "")
+            status = "on track"
+            if total_count:
+                ratio = done_count / total_count
+                if ratio < 0.35:
+                    status = "a lot left"
+                elif ratio < 0.7:
+                    status = "some left"
+            lines.append(f"{row.get('Subject')}: {done_count}/{total_count} studied, {remaining} left ({status}).")
+        return "Study progress:\n" + "\n".join(lines)

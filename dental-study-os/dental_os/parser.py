@@ -18,6 +18,7 @@ SCORE_RE = re.compile(r"\b(\d{1,3}(?:\.\d+)?)\s*/\s*(\d{1,3}(?:\.\d+)?)\b")
 CASE_RE = re.compile(r"\b([A-Za-z]\d{2,})\b")
 PHONE_RE = re.compile(r"(\+?\d[\d\s-]{7,}\d)")
 TOOTH_RE = re.compile(r"\b(?:tooth|teeth|ul|ur|ll|lr|#)\s*[A-Za-z0-9-]+\b", re.IGNORECASE)
+COUNT_RE = re.compile(r"\b(\d{1,3})\b")
 
 
 class DentalParser:
@@ -31,6 +32,8 @@ class DentalParser:
             return ParsedIntent(route="inbox", confidence=0.2, raw_text=text, parsed_type="Inbox", status="New")
         if self._is_query(normalized):
             return ParsedIntent(route="query", confidence=0.98, raw_text=normalized, query_hint=normalized)
+        if self._looks_like_study_progress(normalized):
+            return self._parse_study_progress(normalized)
         if self._looks_like_task_done(normalized):
             task_name = re.sub(r"^(done|completed|finished|mark done)\s+", "", normalized, flags=re.IGNORECASE).strip()
             return ParsedIntent(route="task_done", confidence=0.95, raw_text=normalized, task=task_name)
@@ -84,7 +87,8 @@ class DentalParser:
 
     def _is_query(self, text: str) -> bool:
         lower = text.lower()
-        return lower.startswith(QUESTION_PREFIXES) or lower.endswith("?")
+        progress_question = any(phrase in lower for phrase in ("how much", "how many lectures", "what am i missing", "what lectures", "how much left", "what's left", "whats left"))
+        return lower.startswith(QUESTION_PREFIXES) or lower.endswith("?") or progress_question
 
     def _looks_like_task_done(self, text: str) -> bool:
         lower = text.lower()
@@ -104,6 +108,8 @@ class DentalParser:
 
     def _looks_like_schedule(self, text: str) -> bool:
         lower = text.lower()
+        if any(keyword in lower for keyword in ("assignment", "study", "revise", "finish", "complete", "submit")) and not any(keyword in lower for keyword in ("quiz", "exam", "clinic", "discussion", "deadline")):
+            return False
         parsed_dt, phrase = extract_datetime(text, self.timezone_name)
         has_date = bool(parsed_dt and phrase and len(phrase.strip()) <= len(text))
         return has_date or any(keyword in lower for keyword in SCHEDULE_KEYWORDS)
@@ -111,11 +117,18 @@ class DentalParser:
     def _looks_like_task(self, text: str) -> bool:
         lower = text.lower()
         starters = ("study", "revise", "finish", "submit", "call", "check", "prepare", "review", "complete", "send", "do ")
-        return lower.startswith(starters)
+        return lower.startswith(starters) or "assignment" in lower
 
     def _looks_like_course(self, text: str) -> bool:
         lower = text.lower()
         return any(keyword in lower for keyword in ("lecture", "topic", "lec ", "chapter")) and not self._looks_like_schedule(text)
+
+    def _looks_like_study_progress(self, text: str) -> bool:
+        lower = text.lower()
+        has_subject = bool(self._normalize_subject(text))
+        progress_words = any(phrase in lower for phrase in ("lectures", "lecture", "finished", "studied", "done", "left", "remaining", "covered", "completed"))
+        count_words = len(COUNT_RE.findall(text)) >= 1
+        return has_subject and progress_words and count_words and "quiz" not in lower and "exam" not in lower
 
     def _parse_assessment(self, text: str) -> ParsedIntent:
         match = SCORE_RE.search(text)
@@ -171,6 +184,36 @@ class DentalParser:
 
     def _parse_course(self, text: str) -> ParsedIntent:
         return ParsedIntent(route="courses", confidence=0.74, raw_text=text, subject=self._normalize_subject(text), course_topic=text[:250], course_category="Lecture", status="Active", notes=text)
+
+    def _parse_study_progress(self, text: str) -> ParsedIntent:
+        lower = text.lower()
+        numbers = [match.group(1) for match in COUNT_RE.finditer(text)]
+        subject = self._normalize_subject(text)
+        total_count = ""
+        completed_count = ""
+        if any(phrase in lower for phrase in ("have", "has", "total", "we took", "we have", "there are")) and numbers:
+            total_count = numbers[0]
+        if any(phrase in lower for phrase in ("finished", "studied", "done", "completed", "covered")) and numbers:
+            completed_count = numbers[-1]
+        if "haven't studied" in lower or "havent studied" in lower or "didn't study" in lower:
+            completed_count = "0"
+        if not total_count and len(numbers) >= 2:
+            total_count = numbers[0]
+            completed_count = numbers[1]
+        notes = text
+        return ParsedIntent(
+            route="study_progress",
+            confidence=0.88,
+            raw_text=text,
+            parsed_type="Study_Progress",
+            subject=subject,
+            course_topic="Lecture Progress",
+            course_category="Progress",
+            status="Active",
+            total_count=total_count,
+            completed_count=completed_count,
+            notes=notes,
+        )
 
     def _parse_patient(self, text: str, is_photo: bool = False) -> ParsedIntent:
         subject = self._normalize_subject(text) or self._infer_subject_from_clinical_terms(text)

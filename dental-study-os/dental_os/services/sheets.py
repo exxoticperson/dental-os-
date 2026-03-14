@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
 from typing import Iterable
 
 import gspread
@@ -158,6 +159,62 @@ class SheetService:
         if row_number > 1:
             worksheet.delete_rows(row_number)
 
+    def upsert_study_progress(self, subject: str, total_count: str = "", completed_count: str = "", notes: str = "") -> tuple[int, dict]:
+        self.initialize()
+        worksheet = self.spreadsheet.worksheet("Courses")
+        values = worksheet.get_all_values()
+        headers = values[0] if values else SHEET_HEADERS["Courses"]
+        match_row = None
+        existing = {"Subject": subject, "Lecture_or_Topic": "Lecture Progress", "Category": "Progress", "Status": "Active", "Notes": ""}
+        if len(values) > 1:
+            for row_number, row in enumerate(values[1:], start=2):
+                padded = row + [""] * (len(headers) - len(row))
+                record = dict(zip(headers, padded))
+                if record.get("Subject") == subject and record.get("Category") == "Progress":
+                    match_row = row_number
+                    existing = record
+                    break
+        current_total, current_done = self._extract_progress_counts(existing.get("Notes", ""))
+        if total_count:
+            current_total = int(total_count)
+        if completed_count:
+            current_done = int(completed_count)
+        current_done = max(0, current_done)
+        if current_total and current_done > current_total:
+            current_done = current_total
+        notes_value = self._build_progress_notes(current_total, current_done, notes)
+        row_values = [subject, "Lecture Progress", "Progress", "Active", notes_value]
+        if match_row:
+            self.update_row("Courses", match_row, row_values)
+            return match_row, {"subject": subject, "total": current_total, "done": current_done}
+        row_number = self.append_row("Courses", row_values)
+        return row_number, {"subject": subject, "total": current_total, "done": current_done}
+
+    def get_study_progress(self, subject: str = "") -> list[dict]:
+        rows = []
+        for row in self.get_records("Courses"):
+            if row.get("Category") != "Progress":
+                continue
+            if subject and row.get("Subject") != subject:
+                continue
+            total_count, completed_count = self._extract_progress_counts(row.get("Notes", ""))
+            row = row.copy()
+            row["Total_Count"] = total_count
+            row["Completed_Count"] = completed_count
+            row["Remaining_Count"] = max(total_count - completed_count, 0) if total_count else ""
+            rows.append(row)
+        return rows
+
+    def _extract_progress_counts(self, notes: str) -> tuple[int, int]:
+        total_match = re.search(r"total=(\d+)", notes or "")
+        done_match = re.search(r"done=(\d+)", notes or "")
+        return int(total_match.group(1)) if total_match else 0, int(done_match.group(1)) if done_match else 0
+
+    def _build_progress_notes(self, total_count: int, completed_count: int, notes: str) -> str:
+        clean = re.sub(r"\b(total|done)=\d+\b", "", notes or "").strip(" ;")
+        prefix = f"total={total_count}; done={completed_count}"
+        return f"{prefix}; {clean}".strip(" ;")
+
     def _get_or_create_worksheet(self, title: str) -> gspread.Worksheet:
         try:
             return self.spreadsheet.worksheet(title)
@@ -191,27 +248,31 @@ class SheetService:
             [],
             ["Next 7 Days"],
             ["Date", "Time", "Type", "Subject", "Event", "Priority", "Status"],
-            ['=IFERROR(SORT(FILTER({Schedule!A2:A,Schedule!B2:B,Schedule!C2:C,Schedule!D2:D,Schedule!E2:E,Schedule!F2:F,Schedule!H2:H},Schedule!A2:A<>"",Schedule!A2:A>=TODAY(),Schedule!A2:A<=TODAY()+7),1,TRUE,2,TRUE),"")'],
+            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({Schedule!A2:A,Schedule!B2:B,Schedule!C2:C,Schedule!D2:D,Schedule!E2:E,Schedule!F2:F,Schedule!H2:H},Schedule!A2:A<>"",Schedule!A2:A>=TODAY(),Schedule!A2:A<=TODAY()+7),1,TRUE,2,TRUE),5,7),"")'],
             [],
             ["Open Tasks"],
             ["Created", "Task", "Subject", "Priority", "Due", "Status"],
-            ['=IFERROR(SORT(FILTER({Tasks!A2:A,Tasks!B2:B,Tasks!C2:C,Tasks!D2:D,Tasks!E2:E,Tasks!F2:F},Tasks!B2:B<>"",Tasks!F2:F<>"Done"),4,FALSE,5,TRUE),"")'],
+            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({Tasks!A2:A,Tasks!B2:B,Tasks!C2:C,Tasks!D2:D,Tasks!E2:E,Tasks!F2:F},Tasks!B2:B<>"",Tasks!F2:F<>"Done"),4,FALSE,5,TRUE),5,6),"")'],
             [],
             ["Pending Follow-Ups"],
             ["Date", "Subject", "Case_ID", "Patient", "Next_Step", "Follow_Up_Date"],
-            ['=IFERROR(SORT(FILTER({Patients!A2:A,Patients!B2:B,Patients!C2:C,Patients!D2:D,Patients!J2:J,Patients!K2:K},Patients!C2:C<>"",Patients!K2:K<>""),6,TRUE),"")'],
+            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({Patients!A2:A,Patients!B2:B,Patients!C2:C,Patients!D2:D,Patients!J2:J,Patients!K2:K},Patients!C2:C<>"",Patients!K2:K<>""),6,TRUE),4,6),"")'],
             [],
             ["Recent Patient Sessions"],
             ["Date", "Subject", "Case_ID", "Patient", "Procedure"],
-            ['=IFERROR(SORT(FILTER({Patients!A2:A,Patients!B2:B,Patients!C2:C,Patients!D2:D,Patients!F2:F},Patients!C2:C<>""),1,FALSE),"")'],
+            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({Patients!A2:A,Patients!B2:B,Patients!C2:C,Patients!D2:D,Patients!F2:F},Patients!C2:C<>""),1,FALSE),4,5),"")'],
             [],
             ["Recent Marks"],
             ["Date", "Subject", "Type", "Score", "Total", "Percentage"],
-            ['=IFERROR(SORT(FILTER({Assessments!A2:A,Assessments!B2:B,Assessments!C2:C,Assessments!D2:D,Assessments!E2:E,Assessments!F2:F},Assessments!B2:B<>""),1,FALSE),"")'],
+            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({Assessments!A2:A,Assessments!B2:B,Assessments!C2:C,Assessments!D2:D,Assessments!E2:E,Assessments!F2:F},Assessments!B2:B<>""),1,FALSE),4,6),"")'],
             [],
             ["Pending Materials"],
             ["Date", "Item", "Category", "Subject", "Priority", "Status"],
-            ['=IFERROR(SORT(FILTER({Materials!A2:A,Materials!B2:B,Materials!C2:C,Materials!D2:D,Materials!E2:E,Materials!F2:F},Materials!B2:B<>"",Materials!F2:F<>"Done",Materials!F2:F<>"Bought"),1,FALSE),"")'],
+            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({Materials!A2:A,Materials!B2:B,Materials!C2:C,Materials!D2:D,Materials!E2:E,Materials!F2:F},Materials!B2:B<>"",Materials!F2:F<>"Done",Materials!F2:F<>"Bought"),1,FALSE),4,6),"")'],
+            [],
+            ["Study Progress"],
+            ["Subject", "Studied", "Left", "Notes"],
+            ['=IFERROR(ARRAY_CONSTRAIN(FILTER({Courses!A2:A,REGEXEXTRACT(Courses!E2:E,"done=(\\d+)"),IFERROR(REGEXEXTRACT(Courses!E2:E,"total=(\\d+)")-REGEXEXTRACT(Courses!E2:E,"done=(\\d+)"),""),Courses!E2:E},Courses!C2:C="Progress"),6,4),"")'],
         ]
         worksheet.update("A1", layout, value_input_option="USER_ENTERED")
 
@@ -262,14 +323,6 @@ class SheetService:
                     "fields": "gridProperties.frozenRowCount",
                 }
             },
-            {
-                "addBanding": {
-                    "bandedRange": {
-                        "range": {"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": row_count, "startColumnIndex": 0, "endColumnIndex": col_count},
-                        "rowProperties": {"firstBandColor": WHITE_BG, "secondBandColor": STRIPE_BG},
-                    }
-                }
-            },
         ]
         if title == "Dashboard":
             requests.append(
@@ -300,7 +353,7 @@ class SheetService:
                     }
                 }
             )
-            for row_index in (4, 8, 12, 16, 20):
+            for row_index in (4, 8, 12, 16, 20, 24):
                 requests.append(
                     {
                         "repeatCell": {

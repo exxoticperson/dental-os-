@@ -39,6 +39,8 @@ class ParsedIntent:
     store_or_source: str = ""
     course_topic: str = ""
     course_category: str = ""
+    total_count: str = ""
+    completed_count: str = ""
     query_hint: str = ""
     requires_follow_up: bool = False
     follow_up_question: str = ""
