@@ -114,25 +114,34 @@ DEFAULT_SHEET_COLS = {
 }
 
 SHEET_COLUMN_WIDTHS = {
-    "Dashboard": [180, 150, 160, 160, 160, 160, 160, 160],
-    "Inbox": [145, 380, 140, 180, 130, 130, 135, 240],
-    "Tasks": [120, 280, 180, 100, 115, 110, 120, 220],
-    "Schedule": [110, 90, 120, 180, 260, 100, 130, 110, 220],
-    "Assessments": [110, 180, 150, 90, 90, 100, 240],
-    "Patients": [110, 180, 120, 180, 135, 180, 140, 140, 240, 180, 125, 220],
-    "Materials": [110, 220, 130, 180, 100, 110, 140, 220],
-    "Courses": [180, 260, 130, 120, 220],
-    "Settings": [140, 200, 320, 240],
+    "Dashboard": [170, 120, 170, 120, 170, 120, 170, 120],
+    "Inbox": [150, 420, 150, 180, 130, 120, 135, 250],
+    "Tasks": [120, 320, 180, 100, 120, 110, 120, 240],
+    "Schedule": [115, 95, 120, 190, 320, 100, 130, 110, 240],
+    "Assessments": [115, 180, 150, 90, 90, 100, 240],
+    "Patients": [115, 180, 120, 180, 145, 210, 150, 140, 260, 190, 125, 240],
+    "Materials": [115, 240, 130, 180, 100, 110, 150, 240],
+    "Courses": [180, 280, 130, 120, 240],
+    "Settings": [150, 210, 340, 260],
 }
 
-NEUTRAL_HEADER_BG = {"red": 0.92, "green": 0.93, "blue": 0.94}
-NEUTRAL_BODY_BG = {"red": 0.98, "green": 0.98, "blue": 0.98}
-ACCENT_BG = {"red": 0.88, "green": 0.92, "blue": 0.96}
-ACCENT_TEXT = {"red": 0.11, "green": 0.18, "blue": 0.26}
-STRIPE_BG = {"red": 0.965, "green": 0.972, "blue": 0.978}
-SECTION_BG = {"red": 0.93, "green": 0.95, "blue": 0.97}
-SUMMARY_BG = {"red": 0.95, "green": 0.96, "blue": 0.97}
+TITLE_BG = {"red": 0.13, "green": 0.16, "blue": 0.2}
+TITLE_TEXT = {"red": 0.97, "green": 0.97, "blue": 0.96}
+NEUTRAL_HEADER_BG = {"red": 0.18, "green": 0.22, "blue": 0.27}
+NEUTRAL_BODY_BG = {"red": 0.975, "green": 0.978, "blue": 0.98}
+ACCENT_BG = {"red": 0.9, "green": 0.93, "blue": 0.95}
+ACCENT_TEXT = {"red": 0.13, "green": 0.18, "blue": 0.23}
+STRIPE_BG = {"red": 0.956, "green": 0.962, "blue": 0.968}
+SECTION_BG = {"red": 0.925, "green": 0.932, "blue": 0.94}
+SUMMARY_BG = {"red": 0.94, "green": 0.946, "blue": 0.952}
+SUMMARY_ALT_BG = {"red": 0.946, "green": 0.934, "blue": 0.91}
+SOFT_GREEN_BG = {"red": 0.902, "green": 0.937, "blue": 0.909}
+SOFT_AMBER_BG = {"red": 0.969, "green": 0.934, "blue": 0.863}
+SOFT_RED_BG = {"red": 0.953, "green": 0.89, "blue": 0.878}
 WHITE_BG = {"red": 1.0, "green": 1.0, "blue": 1.0}
+TEXT_COLOR = {"red": 0.13, "green": 0.15, "blue": 0.18}
+MUTED_TEXT = {"red": 0.39, "green": 0.43, "blue": 0.47}
+BORDER_COLOR = {"red": 0.85, "green": 0.87, "blue": 0.89}
 
 PRIORITY_KEYWORDS = {
     "urgent": "Urgent",

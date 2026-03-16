@@ -12,6 +12,7 @@ from dental_os.config import AppConfig
 from dental_os.constants import (
     ACCENT_BG,
     ACCENT_TEXT,
+    BORDER_COLOR,
     COURSE_STATUSES,
     DEFAULT_SETTINGS_ROWS,
     DEFAULT_SHEET_COLS,
@@ -20,6 +21,7 @@ from dental_os.constants import (
     INBOX_STATUSES,
     MATERIAL_CATEGORIES,
     MATERIAL_STATUSES,
+    MUTED_TEXT,
     NEUTRAL_HEADER_BG,
     PRIORITIES,
     SCHEDULE_STATUSES,
@@ -30,8 +32,15 @@ from dental_os.constants import (
     STRIPE_BG,
     SUBJECTS,
     SUMMARY_BG,
+    SUMMARY_ALT_BG,
     TASK_STATUSES,
+    TEXT_COLOR,
+    TITLE_BG,
+    TITLE_TEXT,
     WHITE_BG,
+    SOFT_AMBER_BG,
+    SOFT_GREEN_BG,
+    SOFT_RED_BG,
 )
 from dental_os.services.google import GoogleClients
 
@@ -309,13 +318,15 @@ class SheetService:
         worksheet = self.spreadsheet.worksheet("Dashboard")
         worksheet.clear()
         layout = [
-            ["Dental Study OS", "", "", "Cairo", '=TEXT(NOW(),"ddd d mmm, h:mm AM/PM")', "", "", ""],
-            ["Today View", "", "", "", "", "", "", ""],
-            ["Open Tasks", '=COUNTIFS(Tasks!B2:B,"<>",Tasks!F2:F,"<>Done")', "Next 7 Days", '=COUNTIFS(Schedule!A2:A,">="&TODAY(),Schedule!A2:A,"<="&TODAY()+7,Schedule!H2:H,"<>Cancelled")', "Follow-Ups", '=COUNTIFS(Patients!C2:C,"<>",Patients!K2:K,"<>")', "Pending Materials", '=COUNTIFS(Materials!B2:B,"<>",Materials!F2:F,"<>Done",Materials!F2:F,"<>Bought")'],
+            ["Dental Study OS", "", "", "", "", "Updated", "", '=TEXT(NOW(),"ddd d mmm, h:mm AM/PM")'],
+            ["Clean daily view for schedule, patients, tasks, marks, and materials.", "", "", "", "", "", "", ""],
+            ["", "", "", "", "", "", "", ""],
+            ["Open Tasks", "", "Next 7 Days", "", "Follow-Ups", "", "Pending Materials", ""],
+            ['=COUNTIFS(Tasks!B2:B,"<>",Tasks!F2:F,"<>Done",Tasks!F2:F,"<>Cancelled")', "", '=COUNTIFS(Schedule!A2:A,">="&TODAY(),Schedule!A2:A,"<="&TODAY()+7,Schedule!H2:H,"<>Cancelled",Schedule!H2:H,"<>Done")', "", '=COUNTIFS(Patients!C2:C,"<>",Patients!K2:K,"<>")', "", '=COUNTIFS(Materials!B2:B,"<>",Materials!F2:F,"<>Done",Materials!F2:F,"<>Bought",Materials!F2:F,"<>Cancelled")', ""],
             [],
-            ["Upcoming"],
+            ["Upcoming 7 Days"],
             ["Date", "Time", "Type", "Subject", "Event", "Priority", "Status"],
-            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({IF(Schedule!A2:A<>"",TEXT(Schedule!A2:A,"ddd d mmm"),""),IF(Schedule!B2:B<>"",TEXT(Schedule!B2:B,"h:mm AM/PM"),""),Schedule!C2:C,Schedule!D2:D,Schedule!E2:E,Schedule!F2:F,Schedule!H2:H},Schedule!A2:A<>"",Schedule!A2:A>=TODAY(),Schedule!A2:A<=TODAY()+7,Schedule!H2:H<>"Cancelled"),1,TRUE,2,TRUE),6,7),"")'],
+            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({IF(Schedule!A2:A<>"",TEXT(Schedule!A2:A,"ddd d mmm"),""),IF(Schedule!B2:B<>"",TEXT(Schedule!B2:B,"h:mm AM/PM"),""),Schedule!C2:C,Schedule!D2:D,Schedule!E2:E,Schedule!F2:F,Schedule!H2:H},Schedule!A2:A<>"",Schedule!A2:A>=TODAY(),Schedule!A2:A<=TODAY()+7,Schedule!H2:H<>"Cancelled",Schedule!H2:H<>"Done"),1,TRUE,2,TRUE),5,7),"")'],
             [],
             ["Patient Follow-Ups"],
             ["Date", "Subject", "Case_ID", "Patient", "Next Step", "Follow-Up"],
@@ -327,7 +338,7 @@ class SheetService:
             [],
             ["Open Tasks"],
             ["Created", "Task", "Subject", "Priority", "Due", "Status"],
-            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({IF(Tasks!A2:A<>"",TEXT(Tasks!A2:A,"ddd d mmm"),""),Tasks!B2:B,Tasks!C2:C,Tasks!D2:D,IF(Tasks!E2:E<>"",TEXT(Tasks!E2:E,"ddd d mmm"),""),Tasks!F2:F},Tasks!B2:B<>"",Tasks!F2:F<>"Done"),4,FALSE,5,TRUE),5,6),"")'],
+            ['=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({IF(Tasks!A2:A<>"",TEXT(Tasks!A2:A,"ddd d mmm"),""),Tasks!B2:B,Tasks!C2:C,Tasks!D2:D,IF(Tasks!E2:E<>"",TEXT(Tasks!E2:E,"ddd d mmm"),""),Tasks!F2:F},Tasks!B2:B<>"",Tasks!F2:F<>"Done",Tasks!F2:F<>"Cancelled"),4,FALSE,5,TRUE),5,6),"")'],
             [],
             ["Recent Marks"],
             ["Date", "Subject", "Type", "Score", "Total", "Percentage"],
@@ -410,9 +421,9 @@ class SheetService:
                     "cell": {
                         "userEnteredFormat": {
                             "backgroundColor": NEUTRAL_HEADER_BG,
-                            "textFormat": {"bold": True, "foregroundColor": ACCENT_TEXT, "fontSize": 10, "fontFamily": "Aptos"},
+                            "textFormat": {"bold": True, "foregroundColor": TITLE_TEXT, "fontSize": 10, "fontFamily": "Aptos"},
                             "horizontalAlignment": "LEFT",
-                            "borders": {"bottom": {"style": "SOLID", "color": {"red": 0.84, "green": 0.87, "blue": 0.9}}},
+                            "borders": {"bottom": {"style": "SOLID", "color": BORDER_COLOR}},
                         }
                     },
                     "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,borders)",
@@ -421,16 +432,16 @@ class SheetService:
             {
                 "repeatCell": {
                     "range": {"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": row_count, "startColumnIndex": 0, "endColumnIndex": col_count},
-                    "cell": {
-                        "userEnteredFormat": {
-                            "backgroundColor": WHITE_BG,
-                            "textFormat": {"foregroundColor": {"red": 0.12, "green": 0.12, "blue": 0.12}, "fontSize": 10, "fontFamily": "Aptos"},
-                            "wrapStrategy": "WRAP",
-                            "verticalAlignment": "MIDDLE",
-                        }
-                    },
-                    "fields": "userEnteredFormat(backgroundColor,textFormat,wrapStrategy,verticalAlignment)",
-                }
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": WHITE_BG,
+                                "textFormat": {"foregroundColor": TEXT_COLOR, "fontSize": 10, "fontFamily": "Aptos"},
+                                "wrapStrategy": "CLIP",
+                                "verticalAlignment": "MIDDLE",
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,textFormat,wrapStrategy,verticalAlignment)",
+                    }
             },
             {
                 "updateSheetProperties": {
@@ -440,65 +451,216 @@ class SheetService:
             },
         ]
         if title == "Dashboard":
+            requests.extend(self._dashboard_merge_requests(sheet_id))
+            requests.extend(self._dashboard_row_height_requests(sheet_id))
             requests.append(
                 {
                     "repeatCell": {
-                        "range": {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 4},
+                        "range": {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 8},
                         "cell": {
                             "userEnteredFormat": {
-                                "backgroundColor": ACCENT_BG,
-                                "textFormat": {"bold": True, "fontSize": 15, "foregroundColor": ACCENT_TEXT, "fontFamily": "Aptos"},
-                            }
-                        },
-                        "fields": "userEnteredFormat(backgroundColor,textFormat)",
-                    }
-                }
-            )
-            requests.append(
-                {
-                    "repeatCell": {
-                        "range": {"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 4},
-                        "cell": {
-                            "userEnteredFormat": {
-                                "backgroundColor": SUMMARY_BG,
-                                "textFormat": {"bold": True, "foregroundColor": ACCENT_TEXT, "fontFamily": "Aptos"},
-                            }
-                        },
-                        "fields": "userEnteredFormat(backgroundColor,textFormat)",
-                    }
-                }
-            )
-            for row_index in (4, 8, 12, 16, 20, 24, 28):
-                requests.append(
-                    {
-                        "repeatCell": {
-                        "range": {"sheetId": sheet_id, "startRowIndex": row_index, "endRowIndex": row_index + 1, "startColumnIndex": 0, "endColumnIndex": 7},
-                        "cell": {
-                            "userEnteredFormat": {
-                                "backgroundColor": SECTION_BG,
-                                "textFormat": {"bold": True, "foregroundColor": ACCENT_TEXT, "fontFamily": "Aptos"},
-                            }
-                        },
-                        "fields": "userEnteredFormat(backgroundColor,textFormat)",
-                        }
-                    }
-                )
-            requests.append(
-                {
-                    "repeatCell": {
-                        "range": {"sheetId": sheet_id, "startRowIndex": 2, "endRowIndex": 3, "startColumnIndex": 0, "endColumnIndex": 8},
-                        "cell": {
-                            "userEnteredFormat": {
-                                "backgroundColor": SUMMARY_BG,
-                                "textFormat": {"bold": True, "foregroundColor": ACCENT_TEXT, "fontFamily": "Aptos", "fontSize": 11},
-                                "horizontalAlignment": "CENTER",
+                                "backgroundColor": TITLE_BG,
+                                "textFormat": {"bold": True, "fontSize": 16, "foregroundColor": TITLE_TEXT, "fontFamily": "Aptos"},
+                                "horizontalAlignment": "LEFT",
                             }
                         },
                         "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)",
                     }
                 }
             )
+            requests.append(
+                {
+                    "repeatCell": {
+                        "range": {"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": 8},
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": WHITE_BG,
+                                "textFormat": {"foregroundColor": MUTED_TEXT, "fontSize": 10, "fontFamily": "Aptos"},
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,textFormat)",
+                    }
+                }
+            )
+            for start_col, end_col, bg in ((0, 2, SUMMARY_BG), (2, 4, SUMMARY_ALT_BG), (4, 6, SUMMARY_BG), (6, 8, SUMMARY_ALT_BG)):
+                requests.append(
+                    {
+                        "repeatCell": {
+                            "range": {"sheetId": sheet_id, "startRowIndex": 3, "endRowIndex": 5, "startColumnIndex": start_col, "endColumnIndex": end_col},
+                            "cell": {
+                                "userEnteredFormat": {
+                                    "backgroundColor": bg,
+                                    "textFormat": {"foregroundColor": ACCENT_TEXT, "fontFamily": "Aptos"},
+                                    "horizontalAlignment": "LEFT",
+                                    "verticalAlignment": "MIDDLE",
+                                    "borders": {
+                                        "top": {"style": "SOLID", "color": WHITE_BG},
+                                        "bottom": {"style": "SOLID", "color": WHITE_BG},
+                                        "left": {"style": "SOLID", "color": WHITE_BG},
+                                        "right": {"style": "SOLID", "color": WHITE_BG},
+                                    },
+                                }
+                            },
+                            "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,borders)",
+                        }
+                    }
+                )
+            requests.append(
+                {
+                    "repeatCell": {
+                        "range": {"sheetId": sheet_id, "startRowIndex": 3, "endRowIndex": 4, "startColumnIndex": 0, "endColumnIndex": 8},
+                        "cell": {
+                            "userEnteredFormat": {
+                                "textFormat": {"bold": True, "fontSize": 9, "foregroundColor": MUTED_TEXT, "fontFamily": "Aptos"}
+                            }
+                        },
+                        "fields": "userEnteredFormat.textFormat",
+                    }
+                }
+            )
+            requests.append(
+                {
+                    "repeatCell": {
+                        "range": {"sheetId": sheet_id, "startRowIndex": 4, "endRowIndex": 5, "startColumnIndex": 0, "endColumnIndex": 8},
+                        "cell": {
+                            "userEnteredFormat": {
+                                "textFormat": {"bold": True, "fontSize": 16, "foregroundColor": ACCENT_TEXT, "fontFamily": "Aptos"}
+                            }
+                        },
+                        "fields": "userEnteredFormat.textFormat",
+                    }
+                }
+            )
+            for row_index in (6, 10, 14, 18, 22, 26, 30):
+                requests.append(
+                    {
+                        "repeatCell": {
+                            "range": {"sheetId": sheet_id, "startRowIndex": row_index, "endRowIndex": row_index + 1, "startColumnIndex": 0, "endColumnIndex": 8},
+                            "cell": {
+                                "userEnteredFormat": {
+                                    "backgroundColor": SECTION_BG,
+                                    "textFormat": {"bold": True, "foregroundColor": ACCENT_TEXT, "fontFamily": "Aptos", "fontSize": 10},
+                                    "borders": {"bottom": {"style": "SOLID", "color": BORDER_COLOR}},
+                                }
+                            },
+                            "fields": "userEnteredFormat(backgroundColor,textFormat,borders)",
+                        }
+                    }
+                )
+            for row_index in (7, 11, 15, 19, 23, 27, 31):
+                requests.append(
+                    {
+                        "repeatCell": {
+                            "range": {"sheetId": sheet_id, "startRowIndex": row_index, "endRowIndex": row_index + 1, "startColumnIndex": 0, "endColumnIndex": 8},
+                            "cell": {
+                                "userEnteredFormat": {
+                                    "backgroundColor": NEUTRAL_BODY_BG,
+                                    "textFormat": {"bold": True, "foregroundColor": MUTED_TEXT, "fontFamily": "Aptos", "fontSize": 9},
+                                }
+                            },
+                            "fields": "userEnteredFormat(backgroundColor,textFormat)",
+                        }
+                    }
+                )
+            requests.append(
+                {
+                    "repeatCell": {
+                        "range": {"sheetId": sheet_id, "startRowIndex": 8, "endRowIndex": 34, "startColumnIndex": 0, "endColumnIndex": 8},
+                        "cell": {
+                            "userEnteredFormat": {
+                                "wrapStrategy": "WRAP",
+                                "textFormat": {"foregroundColor": TEXT_COLOR, "fontFamily": "Aptos", "fontSize": 10},
+                            }
+                        },
+                        "fields": "userEnteredFormat(wrapStrategy,textFormat)",
+                    }
+                }
+            )
+        else:
+            requests.extend(self._sheet_banding_requests(sheet_id, col_count))
         return requests
+
+    def _dashboard_merge_requests(self, sheet_id: int) -> list[dict]:
+        requests = [
+            {
+                "unmergeCells": {
+                    "range": {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": 40, "startColumnIndex": 0, "endColumnIndex": 8}
+                }
+            }
+        ]
+        merge_ranges = [
+            (0, 1, 0, 5),
+            (0, 1, 5, 7),
+            (0, 1, 7, 8),
+            (1, 2, 0, 8),
+            (3, 4, 0, 2),
+            (4, 5, 0, 2),
+            (3, 4, 2, 4),
+            (4, 5, 2, 4),
+            (3, 4, 4, 6),
+            (4, 5, 4, 6),
+            (3, 4, 6, 8),
+            (4, 5, 6, 8),
+            (6, 7, 0, 8),
+            (10, 11, 0, 8),
+            (14, 15, 0, 8),
+            (18, 19, 0, 8),
+            (22, 23, 0, 8),
+            (26, 27, 0, 8),
+            (30, 31, 0, 8),
+        ]
+        for start_row, end_row, start_col, end_col in merge_ranges:
+            requests.append(
+                {
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": start_row,
+                            "endRowIndex": end_row,
+                            "startColumnIndex": start_col,
+                            "endColumnIndex": end_col,
+                        },
+                        "mergeType": "MERGE_ALL",
+                    }
+                }
+            )
+        return requests
+
+    def _dashboard_row_height_requests(self, sheet_id: int) -> list[dict]:
+        heights = (
+            (0, 1, 34),
+            (1, 2, 24),
+            (3, 4, 22),
+            (4, 5, 34),
+        )
+        requests = []
+        for start_row, end_row, pixel_size in heights:
+            requests.append(
+                {
+                    "updateDimensionProperties": {
+                        "range": {"sheetId": sheet_id, "dimension": "ROWS", "startIndex": start_row, "endIndex": end_row},
+                        "properties": {"pixelSize": pixel_size},
+                        "fields": "pixelSize",
+                    }
+                }
+            )
+        return requests
+
+    def _sheet_banding_requests(self, sheet_id: int, col_count: int) -> list[dict]:
+        return [
+            {
+                "addConditionalFormatRule": {
+                    "rule": {
+                        "ranges": [{"sheetId": sheet_id, "startRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": col_count}],
+                        "booleanRule": {
+                            "condition": {"type": "CUSTOM_FORMULA", "values": [{"userEnteredValue": "=ISEVEN(ROW())"}]},
+                            "format": {"backgroundColor": STRIPE_BG},
+                        },
+                    },
+                    "index": 0,
+                }
+            }
+        ]
 
     def _column_width_requests(self, sheet_id: int, title: str) -> Iterable[dict]:
         widths = SHEET_COLUMN_WIDTHS[title]
@@ -594,7 +756,7 @@ class SheetService:
                         "ranges": [{"sheetId": sheet_id, "startRowIndex": 1, "startColumnIndex": status_column, "endColumnIndex": status_column + 1}],
                         "booleanRule": {
                             "condition": {"type": "TEXT_EQ", "values": [{"userEnteredValue": "Done"}]},
-                            "format": {"backgroundColor": {"red": 0.9, "green": 0.96, "blue": 0.9}},
+                            "format": {"backgroundColor": SOFT_GREEN_BG},
                         },
                     },
                     "index": 0,
@@ -606,7 +768,7 @@ class SheetService:
                         "ranges": [{"sheetId": sheet_id, "startRowIndex": 1, "startColumnIndex": status_column, "endColumnIndex": status_column + 1}],
                         "booleanRule": {
                             "condition": {"type": "TEXT_EQ", "values": [{"userEnteredValue": "Pending"}]},
-                            "format": {"backgroundColor": {"red": 0.98, "green": 0.95, "blue": 0.86}},
+                            "format": {"backgroundColor": SOFT_AMBER_BG},
                         },
                     },
                     "index": 0,
@@ -618,7 +780,7 @@ class SheetService:
                         "ranges": [{"sheetId": sheet_id, "startRowIndex": 1, "startColumnIndex": priority_column, "endColumnIndex": priority_column + 1}],
                         "booleanRule": {
                             "condition": {"type": "TEXT_EQ", "values": [{"userEnteredValue": "Urgent"}]},
-                            "format": {"backgroundColor": {"red": 0.98, "green": 0.88, "blue": 0.88}},
+                            "format": {"backgroundColor": SOFT_RED_BG},
                         },
                     },
                     "index": 0,
@@ -630,7 +792,7 @@ class SheetService:
                         "ranges": [{"sheetId": sheet_id, "startRowIndex": 1, "startColumnIndex": priority_column, "endColumnIndex": priority_column + 1}],
                         "booleanRule": {
                             "condition": {"type": "TEXT_EQ", "values": [{"userEnteredValue": "High"}]},
-                            "format": {"backgroundColor": {"red": 0.98, "green": 0.93, "blue": 0.86}},
+                            "format": {"backgroundColor": SOFT_AMBER_BG},
                         },
                     },
                     "index": 0,
