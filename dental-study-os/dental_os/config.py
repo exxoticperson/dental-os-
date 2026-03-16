@@ -24,6 +24,9 @@ class AppConfig:
     friday_summary_minute: int
     reminder_scan_minutes: int
     webhook_base_url: str | None
+    llm_provider: str | None
+    llm_model: str
+    gemini_api_key: str | None
 
 
 def _optional_int(name: str) -> int | None:
@@ -57,4 +60,7 @@ def load_config() -> AppConfig:
         friday_summary_minute=int(os.getenv("FRIDAY_SUMMARY_MINUTE", "0")),
         reminder_scan_minutes=int(os.getenv("REMINDER_SCAN_MINUTES", "15")),
         webhook_base_url=os.getenv("WEBHOOK_BASE_URL", "").strip() or None,
+        llm_provider=os.getenv("LLM_PROVIDER", "").strip() or None,
+        llm_model=os.getenv("LLM_MODEL", "gemini-2.5-flash").strip(),
+        gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip() or None,
     )

@@ -200,10 +200,14 @@ class SheetService:
     def clear_operational_data(self) -> None:
         self.initialize()
         for sheet_name in ("Inbox", "Tasks", "Schedule", "Assessments", "Patients", "Materials", "Courses"):
-            worksheet = self.spreadsheet.worksheet(sheet_name)
-            if worksheet.row_count > 1:
-                worksheet.batch_clear([f"A2:{rowcol_to_a1(worksheet.row_count, worksheet.col_count)}"])
+            self.clear_sheet_data(sheet_name)
         self._refresh_presentation_safe()
+
+    def clear_sheet_data(self, sheet_name: str) -> None:
+        self.initialize()
+        worksheet = self.spreadsheet.worksheet(sheet_name)
+        if worksheet.row_count > 1:
+            worksheet.batch_clear([f"A2:{rowcol_to_a1(worksheet.row_count, worksheet.col_count)}"])
 
     def upsert_study_progress(self, subject: str, total_count: str = "", completed_count: str = "", notes: str = "") -> tuple[int, dict]:
         self.initialize()

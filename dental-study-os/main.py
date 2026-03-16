@@ -15,6 +15,7 @@ from dental_os.query_engine import QueryEngine
 from dental_os.reminders import build_scheduler
 from dental_os.services.drive import DriveService
 from dental_os.services.google import GoogleClients
+from dental_os.services.llm import LLMParser
 from dental_os.services.sheets import SheetService
 from dental_os.telegram_handlers.messages import handle_photo, handle_text, handle_voice, help_command, init_command, start_command, summary_command
 
@@ -29,6 +30,7 @@ def build_application(config: AppConfig, *, webhook_mode: bool) -> tuple[Applica
     sheets = SheetService(config, google)
     drive = DriveService(config, google)
     parser = DentalParser(config.default_timezone)
+    llm_parser = LLMParser(config)
     query_engine = QueryEngine(sheets, parser, config.default_timezone)
 
     builder = Application.builder().token(config.telegram_token)
@@ -39,6 +41,7 @@ def build_application(config: AppConfig, *, webhook_mode: bool) -> tuple[Applica
     app.bot_data["sheets"] = sheets
     app.bot_data["drive"] = drive
     app.bot_data["parser"] = parser
+    app.bot_data["llm_parser"] = llm_parser
     app.bot_data["query_engine"] = query_engine
 
     app.add_handler(CommandHandler("start", start_command))

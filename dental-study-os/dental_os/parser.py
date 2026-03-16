@@ -240,8 +240,8 @@ class DentalParser:
         tooth_match = TOOTH_RE.search(text)
         tooth = tooth_match.group(0) if tooth_match else ""
         name = ""
-        if case_id:
-            after_case = text.split(case_id, 1)[1].strip()
+        if case_match:
+            after_case = text[case_match.end():].strip()
             name_tokens = []
             for token in after_case.split():
                 if token.lower() in {"fixed", "removable", "endo", "resto", "restorative", "perio", "patient"}:
