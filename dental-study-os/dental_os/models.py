@@ -54,3 +54,32 @@ class PendingClarification:
     question: str
     attempts: int = 1
     photo_file_id: str = ""
+
+
+@dataclass
+class StructuredAction:
+    kind: str
+    text: str = ""
+    route: str = ""
+    subject: str = ""
+    date: str = ""
+    time: str = ""
+    event_type: str = ""
+    event: str = ""
+    task: str = ""
+    assessment_type: str = ""
+    score: str = ""
+    total: str = ""
+    percentage: str = ""
+    case_id: str = ""
+    patient_name: str = ""
+    phone_number: str = ""
+    procedure: str = ""
+    tooth_or_area: str = ""
+    next_step: str = ""
+    follow_up_date: str = ""
+    item: str = ""
+    category: str = ""
+    priority: str = ""
+    status: str = ""
+    notes: str = ""

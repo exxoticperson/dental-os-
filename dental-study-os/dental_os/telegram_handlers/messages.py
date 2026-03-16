@@ -12,7 +12,7 @@ from telegram.ext import ContextTypes
 from dental_os.config import AppConfig
 from dental_os.constants import MATERIAL_STATUSES, PRIORITIES, SCHEDULE_STATUSES, SUBJECTS, TASK_STATUSES
 from dental_os.date_utils import extract_datetime, extract_time_only, timestamp_local, today_local
-from dental_os.models import PendingClarification
+from dental_os.models import PendingClarification, StructuredAction
 from dental_os.parser import DentalParser
 from dental_os.query_engine import QueryEngine
 from dental_os.services.drive import DriveService
@@ -257,7 +257,7 @@ async def _process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text
         await _handle_reset_request(update, context, text)
         return
     if llm_parser and getattr(llm_parser, "enabled", False) and _should_try_llm_split(text):
-        handled = await _handle_llm_split(update, context, text)
+        handled = await _handle_llm_actions(update, context, text)
         if handled:
             return
     intent = parser.parse(text)
@@ -645,30 +645,47 @@ async def _handle_reset_confirmation(update: Update, context: ContextTypes.DEFAU
     await update.effective_message.reply_text(f"Cleared: {pending_reset.scope}.")
 
 
-async def _handle_llm_split(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> bool:
+async def _handle_llm_actions(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> bool:
     llm_parser = context.application.bot_data.get("llm_parser")
     if not llm_parser:
         return False
-    items = llm_parser.split_message(text)
-    if len(items) <= 1:
+    actions = llm_parser.extract_actions(text)
+    if not actions:
         return False
     sheets: SheetService = context.application.bot_data["sheets"]
     parser: DentalParser = context.application.bot_data["parser"]
+    query_engine: QueryEngine = context.application.bot_data["query_engine"]
+    if all(action.kind == "query" or action.route == "query" for action in actions):
+        await update.effective_message.reply_text(query_engine.answer(text))
+        return True
     summaries: list[str] = []
     saved_any = False
-    for item in items[:5]:
-        item_text = item.get("text", "").strip()
-        if not item_text:
+    last_patient_action: StructuredAction | None = None
+    for action in actions[:6]:
+        if action.kind == "query":
             continue
-        intent = parser.parse(item_text)
-        if _should_answer_as_query(item_text, intent) or _should_save_to_inbox(item_text, intent):
+        if action.kind == "chat":
             continue
-        saved = await _apply_intent_direct(context, update.effective_user.id, item_text, intent, sheets, parser)
+        if action.kind in {"delete", "edit", "done", "reset"}:
+            continue
+        if action.route == "patients":
+            if last_patient_action and not action.patient_name:
+                action.patient_name = last_patient_action.patient_name
+                action.case_id = action.case_id or last_patient_action.case_id
+                action.subject = action.subject or last_patient_action.subject
+                action.phone_number = action.phone_number or last_patient_action.phone_number
+            if last_patient_action and not action.follow_up_date and action.next_step and not action.procedure:
+                last_patient_action.next_step = action.next_step or last_patient_action.next_step
+                last_patient_action.follow_up_date = action.follow_up_date or last_patient_action.follow_up_date
+                continue
+            last_patient_action = action
+        saved = await _apply_structured_action(context, update.effective_user.id, action, sheets, parser, source_text=text)
         if saved:
             summaries.append(saved)
             saved_any = True
     if saved_any:
-        await update.effective_message.reply_text("Saved:\n" + "\n".join(summaries[:4]))
+        header = "Saved:" if len(summaries) == 1 else f"Saved {len(summaries)} items:"
+        await update.effective_message.reply_text(header + "\n" + "\n".join(summaries[:4]))
         return True
     return False
 
@@ -926,6 +943,71 @@ async def _apply_intent_direct(
     return ""
 
 
+async def _apply_structured_action(
+    context: ContextTypes.DEFAULT_TYPE,
+    user_id: int,
+    action: StructuredAction,
+    sheets: SheetService,
+    parser: DentalParser,
+    source_text: str = "",
+) -> str:
+    today = today_local(parser.timezone_name)
+    route = action.route or "inbox"
+    subject = action.subject or parser._normalize_subject(action.text) or parser._normalize_subject(source_text)
+    if route == "patients" and not subject:
+        subject = parser._infer_subject_from_clinical_terms(action.procedure or action.text or source_text)
+    normalized_date = action.date
+    normalized_follow_up = action.follow_up_date
+    relative_hints = [_contains_relative_timing(action.text), _contains_relative_timing(source_text)]
+    if any(relative_hints):
+        if route in {"schedule", "tasks", "assessments"}:
+            normalized_date = ""
+        if route == "patients":
+            normalized_follow_up = ""
+            if "today" in (action.text or "").lower() or "today" in source_text.lower():
+                normalized_date = today
+    date_source_candidates = [action.text, source_text]
+    for candidate in date_source_candidates:
+        if not candidate:
+            continue
+        parsed_dt, _ = extract_datetime(candidate, parser.timezone_name)
+        if parsed_dt and not normalized_date and route in {"schedule", "tasks", "assessments"}:
+            normalized_date = parsed_dt.strftime("%Y-%m-%d")
+        if parsed_dt and not normalized_follow_up and route == "patients" and ("follow" in candidate.lower() or "revisit" in candidate.lower() or "review" in candidate.lower()):
+            normalized_follow_up = parsed_dt.strftime("%Y-%m-%d")
+    if route == "tasks":
+        task_text = action.task or action.text
+        row_number = sheets.append_row("Tasks", [today, task_text, subject, action.priority or "Medium", normalized_date, action.status or "Open", "", action.notes or action.text])
+        _remember_last_action(context, user_id, "Tasks", row_number, task_text)
+        return f"- Task: {task_text}"
+    if route == "schedule":
+        event_text = action.event or action.text
+        event_type = (action.event_type or "Reminder").title()
+        reminder_date = normalized_follow_up or normalized_date
+        row_number = sheets.append_row("Schedule", [normalized_date, action.time, event_type, subject, event_text, action.priority or "Medium", reminder_date, action.status or "Scheduled", action.notes or action.text])
+        _remember_last_action(context, user_id, "Schedule", row_number, event_text)
+        return f"- Schedule: {event_text}"
+    if route == "assessments":
+        row_number = sheets.append_row("Assessments", [normalized_date or today, subject, action.assessment_type or "Quiz", action.score, action.total, action.percentage, action.notes or action.text])
+        _remember_last_action(context, user_id, "Assessments", row_number, action.text)
+        return f"- Mark: {subject or 'Assessment'} {action.score}/{action.total}"
+    if route == "patients":
+        row_number = sheets.append_row("Patients", [normalized_date or today, subject, action.case_id, action.patient_name, action.phone_number, action.procedure or action.text, action.tooth_or_area, "", action.notes or action.text, action.next_step, normalized_follow_up, ""])
+        _remember_last_action(context, user_id, "Patients", row_number, action.text)
+        label = _record_label("Patients", {"Case_ID": action.case_id, "Patient_Name": action.patient_name})
+        return f"- Patient: {label or action.patient_name or action.procedure}"
+    if route == "materials":
+        item_text = action.item or action.text
+        row_number = sheets.append_row("Materials", [today, item_text, action.category or "Other", subject, action.priority or "Medium", action.status or "Pending", "", action.notes or action.text])
+        _remember_last_action(context, user_id, "Materials", row_number, item_text)
+        return f"- Material: {item_text}"
+    if route == "study_progress":
+        row_number, _ = sheets.upsert_study_progress(subject, notes=action.notes or action.text)
+        _remember_last_action(context, user_id, "Courses", row_number, action.text)
+        return f"- Study: {subject}"
+    return ""
+
+
 def _extract_updates_for_record(text: str, sheet_name: str, record: dict, parser: DentalParser) -> dict[str, str]:
     lower = text.lower().strip()
     value = _extract_update_value(text)
@@ -1071,7 +1153,51 @@ def _should_try_llm_split(text: str) -> bool:
     lower = text.lower()
     separators = [",", " and ", " also ", ";"]
     signal_count = sum(lower.count(token) for token in separators)
-    return signal_count >= 2 or ("patient" in lower and "quiz" in lower)
+    complex_keywords = (
+        "patient",
+        "case",
+        "quiz",
+        "exam",
+        "follow up",
+        "follow-up",
+        "revisit",
+        "tmrw",
+        "tomo",
+        "tomorrow",
+        "next week",
+        "in a week",
+    )
+    keyword_hits = sum(1 for token in complex_keywords if token in lower)
+    return signal_count >= 1 and keyword_hits >= 2 or signal_count >= 2 or keyword_hits >= 3
+
+
+def _contains_relative_timing(text: str) -> bool:
+    lower = (text or "").lower()
+    if not lower:
+        return False
+    phrases = (
+        "today",
+        "tomorrow",
+        "day after tomorrow",
+        "next week",
+        "this week",
+        "in a week",
+        "next monday",
+        "next tuesday",
+        "next wednesday",
+        "next thursday",
+        "next friday",
+        "next saturday",
+        "next sunday",
+        "this monday",
+        "this tuesday",
+        "this wednesday",
+        "this thursday",
+        "this friday",
+        "this saturday",
+        "this sunday",
+    )
+    return any(phrase in lower for phrase in phrases) or bool(re.search(r"\bin \d+ days?\b", lower))
 
 
 def _extract_update_value(text: str) -> str:

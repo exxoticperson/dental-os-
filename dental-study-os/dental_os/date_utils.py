@@ -16,8 +16,12 @@ SLANG_REPLACEMENTS = (
     (r"\btmrw\b", "tomorrow"),
     (r"\btmw\b", "tomorrow"),
     (r"\btomo\b", "tomorrow"),
-    (r"\bafter tmrw\b", "after tomorrow"),
-    (r"\bafter tmw\b", "after tomorrow"),
+    (r"\bafter tmrw\b", "day after tomorrow"),
+    (r"\bafter tmw\b", "day after tomorrow"),
+    (r"\bafter tomorrow\b", "day after tomorrow"),
+    (r"\bin a wk\b", "in a week"),
+    (r"\bnext wk\b", "next week"),
+    (r"\bthis wk\b", "this week"),
     (r"\bf\/up\b", "follow up"),
     (r"\bfu\b", "follow up"),
     (r"\bqz\b", "quiz"),
@@ -56,7 +60,15 @@ def format_date(dt: datetime | None) -> str:
 
 
 def extract_datetime(text: str, timezone_name: str, prefer_future: bool = True) -> tuple[datetime | None, str]:
+    text = normalize_natural_text(text)
     base = now_local(timezone_name)
+    lower = text.lower()
+    explicit_time = bool(TIME_AT_RE.search(text) or TIME_COLON_RE.search(text) or TIME_MERIDIEM_RE.search(text))
+    if "day after tomorrow" in lower:
+        parsed = base + timedelta(days=2)
+        if not explicit_time:
+            parsed = parsed.replace(hour=0, minute=0, second=0, microsecond=0)
+        return parsed, "day after tomorrow"
     settings = {
         "PREFER_DATES_FROM": "future" if prefer_future else "current_period",
         "RELATIVE_BASE": base,
@@ -67,8 +79,12 @@ def extract_datetime(text: str, timezone_name: str, prefer_future: bool = True) 
     results = search_dates(text, languages=["en"], settings=settings)
     if results:
         phrase, parsed = results[0]
+        if not explicit_time:
+            parsed = parsed.replace(hour=0, minute=0, second=0, microsecond=0)
         return parsed, phrase
     parsed = dateparser.parse(text, languages=["en"], settings=settings)
+    if parsed and not explicit_time:
+        parsed = parsed.replace(hour=0, minute=0, second=0, microsecond=0)
     return parsed, text if parsed else ""
 
 
