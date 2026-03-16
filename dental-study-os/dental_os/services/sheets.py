@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import re
+import time
 from typing import Iterable
 
 import gspread
@@ -42,6 +43,8 @@ class SheetService:
         self.spreadsheet = self.google.gspread_client.open_by_key(config.google_spreadsheet_id)
         self._initialized = False
         self._formatting_attempted = False
+        self._record_cache: dict[str, tuple[float, list[dict]]] = {}
+        self._cache_ttl_seconds = 12.0
 
     def initialize(self) -> None:
         if self._initialized:
@@ -62,10 +65,14 @@ class SheetService:
         worksheet = self.spreadsheet.worksheet(sheet_name)
         row_number = len(worksheet.get_all_values()) + 1
         worksheet.append_row(values, value_input_option="USER_ENTERED")
+        self._invalidate_cache(sheet_name)
         return row_number
 
     def get_records(self, sheet_name: str) -> list[dict]:
         self.initialize()
+        cached = self._record_cache.get(sheet_name)
+        if cached and time.monotonic() - cached[0] < self._cache_ttl_seconds:
+            return [row.copy() for row in cached[1]]
         worksheet = self.spreadsheet.worksheet(sheet_name)
         values = worksheet.get_all_values()
         if not values:
@@ -77,6 +84,7 @@ class SheetService:
                 continue
             padded = row + [""] * (len(headers) - len(row))
             records.append(dict(zip(headers, padded)))
+        self._record_cache[sheet_name] = (time.monotonic(), [row.copy() for row in records])
         return records
 
     def update_row(self, sheet_name: str, row_number: int, values: list[str]) -> None:
@@ -85,6 +93,7 @@ class SheetService:
         start = rowcol_to_a1(row_number, 1)
         end = rowcol_to_a1(row_number, len(values))
         worksheet.update(f"{start}:{end}", [values], value_input_option="USER_ENTERED")
+        self._invalidate_cache(sheet_name)
 
     def mark_task_done(self, task_fragment: str) -> str | None:
         self.initialize()
@@ -196,6 +205,7 @@ class SheetService:
         worksheet = self.spreadsheet.worksheet(sheet_name)
         if row_number > 1:
             worksheet.delete_rows(row_number)
+            self._invalidate_cache(sheet_name)
 
     def clear_operational_data(self) -> None:
         self.initialize()
@@ -208,6 +218,7 @@ class SheetService:
         worksheet = self.spreadsheet.worksheet(sheet_name)
         if worksheet.row_count > 1:
             worksheet.batch_clear([f"A2:{rowcol_to_a1(worksheet.row_count, worksheet.col_count)}"])
+            self._invalidate_cache(sheet_name)
 
     def upsert_study_progress(self, subject: str, total_count: str = "", completed_count: str = "", notes: str = "") -> tuple[int, dict]:
         self.initialize()
@@ -264,6 +275,12 @@ class SheetService:
         clean = re.sub(r"\b(total|done)=\d+\b", "", notes or "").strip(" ;")
         prefix = f"total={total_count}; done={completed_count}"
         return f"{prefix}; {clean}".strip(" ;")
+
+    def _invalidate_cache(self, sheet_name: str | None = None) -> None:
+        if sheet_name:
+            self._record_cache.pop(sheet_name, None)
+            return
+        self._record_cache.clear()
 
     def _get_or_create_worksheet(self, title: str) -> gspread.Worksheet:
         try:
