@@ -40,6 +40,8 @@ def load_config() -> AppConfig:
     oauth_client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "").strip()
     oauth_client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
     oauth_refresh_token = os.getenv("GOOGLE_OAUTH_REFRESH_TOKEN", "").strip()
+    gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip() or None
+    llm_provider = os.getenv("LLM_PROVIDER", "").strip() or ("gemini" if gemini_api_key else None)
     if not telegram_token:
         raise ValueError("TELEGRAM_TOKEN is required.")
     if not spreadsheet_id:
@@ -60,7 +62,7 @@ def load_config() -> AppConfig:
         friday_summary_minute=int(os.getenv("FRIDAY_SUMMARY_MINUTE", "0")),
         reminder_scan_minutes=int(os.getenv("REMINDER_SCAN_MINUTES", "15")),
         webhook_base_url=os.getenv("WEBHOOK_BASE_URL", "").strip() or None,
-        llm_provider=os.getenv("LLM_PROVIDER", "").strip() or None,
+        llm_provider=llm_provider,
         llm_model=os.getenv("LLM_MODEL", "gemini-2.5-flash").strip(),
-        gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip() or None,
+        gemini_api_key=gemini_api_key,
     )
